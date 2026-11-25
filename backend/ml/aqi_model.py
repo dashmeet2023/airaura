@@ -19,7 +19,9 @@ from pathlib import Path
 from typing import Optional
 
 import joblib
+import xgboost
 
+MODEL_JSON_PATH = Path(__file__).parent / "model" / "aqi_track_a_xgb.json"
 MODEL_PATH = Path(__file__).parent / "model" / "aqi_track_a_xgb.pkl"
 
 # Order matters: must match the column order the model was trained on.
@@ -39,17 +41,26 @@ def _load_model() -> None:
     if _attempted:
         return
     _attempted = True
+    if MODEL_JSON_PATH.exists():
+        try:
+            booster = xgboost.Booster()
+            booster.load_model(MODEL_JSON_PATH)
+            _model = booster
+        except Exception as e:
+            _load_error = str(e)
+        return
     try:
         _model = joblib.load(MODEL_PATH)
     except FileNotFoundError:
-        _load_error = f"model file not found at {MODEL_PATH}"
+        _load_error = f"model file not found at {MODEL_JSON_PATH} or {MODEL_PATH}"
     except Exception as e:  # bad pickle, version mismatch, etc.
         _load_error = str(e)
 
 
 def model_status() -> dict:
     _load_model()
-    return {"loaded": _model is not None, "error": _load_error, "path": str(MODEL_PATH)}
+    active_path = MODEL_JSON_PATH if MODEL_JSON_PATH.exists() else MODEL_PATH
+    return {"loaded": _model is not None, "error": _load_error, "path": str(active_path)}
 
 
 def _build_features(daily: list[dict], target_date) -> Optional[dict]:
@@ -90,5 +101,8 @@ def predict_aqi(daily: list[dict], target_date=None) -> Optional[dict]:
     if feats is None:
         return None
     row = [[feats[c] for c in FEATURE_COLS]]
-    pred = _model.predict(row)[0]
+    if isinstance(_model, xgboost.Booster):
+        pred = _model.predict(xgboost.DMatrix(row, feature_names=FEATURE_COLS))[0]
+    else:
+        pred = _model.predict(row)[0]
     return {"predicted_aqi": round(float(pred)), "features_used": feats}

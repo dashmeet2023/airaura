@@ -99,6 +99,12 @@
   - Added commented Render HTTPS `SERVER_URL` example in `config.example.h` and raised timeouts over HTTPS (`setConnectTimeout(15000)`, `setTimeout(30000)`) in `airaura_node.ino` for Render cold starts.
   - Added step-by-step production deployment and key rotation guide in `DEPLOYMENT.md`.
 
+### Final Pre-Push Hardening
+- **Backend & Model (`backend/requirements.txt`, `backend/ml/model/aqi_track_a_xgb.json`, `backend/ml/aqi_model.py`, `render.yaml`):**
+  - Pinned all 11 runtime packages in `backend/requirements.txt` to exact `pip freeze` versions from `backend/venv` without adding sub-dependencies.
+  - Exported the XGBoost model to portable JSON (`backend/ml/model/aqi_track_a_xgb.json`) and updated `backend/ml/aqi_model.py` to load the `.json` model via `xgboost.Booster().load_model()` with `.pkl` fallback only when `.json` is missing (avoiding `scikit-learn` runtime dependency; verified 5 sample feature rows match within `< 0.01` with max diff `0.00000000`).
+  - Pinned `PYTHON_VERSION=3.12.10` in `render.yaml` to match `backend/venv`.
+
 
 
 
