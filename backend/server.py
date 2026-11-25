@@ -35,8 +35,9 @@ from ingest import (
     get_node_for_station,
     get_nodes_by_station,
     is_node_online,
+    node_has_data,
     resolve_station_current,
-    resolve_station_daily,
+    resolve_station_daily_for_predict,
     resolve_station_history_24h,
     seed_default_node,
 )
@@ -276,34 +277,39 @@ async def get_forecast(station_id: str):
 
 @api.get("/stations/{station_id}/predict")
 async def predict_station_aqi(station_id: str):
-    """ML nowcast (Track A XGBoost model). Uses real readings_daily for online
-    node stations (returning warming_up when <8 days exist), or falls back to
-    synthetic daily history when simulated or offline."""
+    """ML nowcast (Track A XGBoost model). Uses real readings_daily (>=12h/day,
+    8 consecutive IST days) for nodes with data, or falls back to synthetic when
+    no hardware data exists."""
     s = _find_station(station_id)
     node = await get_node_for_station(db, station_id)
 
-    if node is not None and is_node_online(node):
-        daily = await resolve_station_daily(db, node, limit=14)
-        if len(daily) < 8:
-            return {
+    if node is not None and await node_has_data(db, node["node_id"]):
+        pred_state = await resolve_station_daily_for_predict(db, node)
+        if not pred_state["ready"]:
+            payload = {
                 "station_id": station_id,
                 "status": "warming_up",
-                "days_available": len(daily),
-                "days_needed": 8,
+                "days_available": pred_state["days_available"],
+                "days_needed": pred_state["days_needed"],
                 "simulated": False,
                 "source": "airaura-node",
             }
-        target_date = datetime.strptime(daily[-1]["date"], "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            if "reason" in pred_state:
+                payload["reason"] = pred_state["reason"]
+            return payload
+        daily = pred_state["daily"]
+        ld = pred_state["latest_date"]
+        target_date = datetime(ld.year, ld.month, ld.day, tzinfo=timezone.utc)
         result = predict_aqi(daily, target_date=target_date)
         simulated = False
         source = "airaura-node"
-        extra = {}
+        extra = {"node_status": "online" if is_node_online(node) else "offline"}
     else:
         daily = daily_history(s, days=10)
         result = predict_aqi(daily)
         simulated = True
         source = "simulated"
-        extra = {"node_status": "offline"} if node is not None else {}
+        extra = {}
 
     if result is None:
         status_info = model_status()
@@ -406,10 +412,14 @@ async def root():
 app.include_router(api)
 app.include_router(create_ingest_router(db, require_role))
 
+_raw_cors = os.environ.get("CORS_ORIGINS", "").strip()
+_cors_origins = [o.strip() for o in _raw_cors.split(",") if o.strip()] if _raw_cors else ["*"]
+_allow_credentials = bool(_raw_cors and "*" not in _cors_origins)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
-    allow_credentials=True,
+    allow_origins=_cors_origins,
+    allow_credentials=_allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -425,23 +435,38 @@ async def on_startup():
     await ensure_ingest_indexes(db)
     await seed_default_node(db)
 
+    env = os.environ.get("ENV", "development").strip().lower()
+    admin_password = os.environ.get("ADMIN_PASSWORD")
+    student_password = os.environ.get("STUDENT_DEMO_PASSWORD")
+
+    if not admin_password:
+        logger.warning("ADMIN_PASSWORD is not set; using default demo password in non-production")
+    if not student_password:
+        logger.warning("STUDENT_DEMO_PASSWORD is not set; using default demo password in non-production")
+
     # Seed demo accounts
-    seed_accounts = [
-        {
+    seed_accounts = []
+    if env == "production" and (not admin_password or admin_password == "admin@123"):
+        logger.warning("ENV=production and ADMIN_PASSWORD is missing or default; skipping admin seed")
+    else:
+        seed_accounts.append({
             "email": os.environ.get("ADMIN_EMAIL", "admin@ppcb.gov.in"),
-            "password": os.environ.get("ADMIN_PASSWORD", "admin@123"),
+            "password": admin_password or "admin@123",
             "name": "PPCB Administrator",
             "role": "pcb_official",
             "home_station_id": "patiala-city",
-        },
-        {
+        })
+
+    if env == "production" and not student_password:
+        logger.warning("ENV=production and STUDENT_DEMO_PASSWORD is missing; skipping student demo seed")
+    else:
+        seed_accounts.append({
             "email": os.environ.get("STUDENT_DEMO_EMAIL", "student@thapar.edu"),
-            "password": os.environ.get("STUDENT_DEMO_PASSWORD", "thapar@123"),
+            "password": student_password or "thapar@123",
             "name": "Thapar Student",
             "role": "student",
             "home_station_id": "thapar-campus",
-        },
-    ]
+        })
     for acc in seed_accounts:
         existing = await db.users.find_one({"email": acc["email"]})
         if existing is None:

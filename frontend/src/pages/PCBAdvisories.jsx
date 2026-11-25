@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Header from "../components/Header";
 import { api, formatApiError } from "../api/client";
+import { useAutoRefresh, formatUpdatedTime } from "../hooks/useAutoRefresh";
 import { Megaphone } from "@phosphor-icons/react";
 
 const SEVERITIES = [
@@ -18,16 +19,23 @@ export default function PCBAdvisories() {
   const [form, setForm] = useState({ title: "", message: "", severity: "moderate", station_ids: [] });
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState(null);
 
-  const load = async () => {
-    const { data } = await api.get("/advisories");
-    setAdvisories(data.advisories);
-  };
+  const load = useCallback(async () => {
+    const [advRes, stRes] = await Promise.all([
+      api.get("/advisories"),
+      api.get("/stations"),
+    ]);
+    setAdvisories(advRes.data.advisories || []);
+    setStations(stRes.data.stations || []);
+    setLastUpdated(new Date());
+  }, []);
 
   useEffect(() => {
     load();
-    api.get("/stations").then(({ data }) => setStations(data.stations));
-  }, []);
+  }, [load]);
+
+  useAutoRefresh(load, 60000);
 
   const toggleStation = (id) => {
     setForm((f) => ({
@@ -54,10 +62,17 @@ export default function PCBAdvisories() {
     <div className="min-h-screen">
       <Header />
       <main className="max-w-[1400px] mx-auto px-6 lg:px-10 py-10">
-        <div className="mb-8">
-          <div className="text-[10px] uppercase tracking-[0.3em] text-[#94A3B8] mb-2">PPCB · Public Communications</div>
-          <h1 className="font-display text-3xl lg:text-4xl font-bold tracking-tight">Advisories</h1>
-          <p className="text-sm text-[#94A3B8] mt-2">Broadcast official air-quality advisories to citizens of affected zones.</p>
+        <div className="flex flex-wrap items-end justify-between gap-4 mb-8">
+          <div>
+            <div className="text-[10px] uppercase tracking-[0.3em] text-[#94A3B8] mb-2">PPCB · Public Communications</div>
+            <h1 className="font-display text-3xl lg:text-4xl font-bold tracking-tight">Advisories</h1>
+            <p className="text-sm text-[#94A3B8] mt-2">Broadcast official air-quality advisories to citizens of affected zones.</p>
+          </div>
+          {lastUpdated && (
+            <span data-testid="last-updated-indicator" className="text-[11px] font-mono text-[#64748B]">
+              Updated {formatUpdatedTime(lastUpdated)}
+            </span>
+          )}
         </div>
 
         <div className="grid lg:grid-cols-5 gap-6">

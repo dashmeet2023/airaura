@@ -58,5 +58,22 @@
 - **Simulator (`tools/fake_node.py`):**
   - Adjusted diurnal curves to Patiala local time (IST) with realistic winter temperatures (`≈7 °C` at night to `≈22 °C` mid-afternoon) and higher nighttime humidity (up to `95%`).
 
+### Hardware Integration v0.2.0
+- **Backend (`backend/ingest.py`, `backend/server.py`):**
+  - Updated `IngestReadingIn` to the v0.2.0 ESP32 firmware payload (`boot_id`, nullable `pm1`/`pm25`/`pm10`/`temp_c`/`rh_pct`, `pm_samples`, `gas_sensor`, `gas_alarm`, `gas_alarm_frac`, nullable `gas_mv`, `rssi`, `fw`, plus optional legacy `mq135_*` fields).
+  - Replaced `(node_id, seq)` dedup index with `(node_id, boot_id, seq)` (dropping legacy index on startup; missing `boot_id` defaults to `0`).
+  - Added server timestamp correction (`ts_corrected=true` when `ts` is missing, >5 min in the future, or >7 days old).
+  - Updated aggregation to compute null-ignoring means including `pm1`, `gas_alarm_frac`, and `gas_mv` in `"Asia/Kolkata"` timezone; periodic runs aggregate the last 48h while `POST /api/admin/aggregate?full=true` re-aggregates all history.
+  - Updated `node_current_reading()` to fall back to the last non-null PM reading with `pm_stale=true`, expose `pm1`/`gas_sensor`/`gas_alarm`/`gas_alarm_frac`/`gas_mv`, and retain the last real reading (`node_status="offline"`, `stale=true`, `last_seen`) when offline (synthetic fallback only if a node never sent data).
+  - Updated `/predict` to require >=12h hourly coverage per IST day (defaulting latest eligible day to yesterday when today isn't covered) and 8 consecutive covered days (returning `warming_up` with `reason="gap in data"` on gaps).
+  - Hardened security: removed demo credential autofill from `Login.jsx`, deleted `memory/test_credentials.md`, added startup warnings and `ENV=production` admin-seed skip for missing/default passwords, and enforced trimmed CORS origin lists with `allow_credentials=False` when missing or `*`.
+- **Frontend (`PollutantGrid.jsx`, `AQIBigCard.jsx`, `MLPredictionCard.jsx`, `useAutoRefresh.js`, pages):**
+  - Replaced hardcoded MQ-135 gas tile with dynamic `Gas (<gas_sensor>)` showing red `"Smoke/gas detected"` / green `"Normal"` pills and optional `gas_mv`.
+  - Added `PM 1` tile, `"PM sensor not responding"` (`pm_stale`) notes, and `"Offline since <time>"` greyed-out offline state.
+  - Added visibility-aware 60s auto-refresh (`useAutoRefresh`) with `"Updated hh:mm:ss"` indicators across `StudentDashboard`, `LocationDetail`, `PCBDashboard`, `PCBStations`, and `PCBAdvisories`.
+- **Firmware & Simulator (`firmware/airaura_node/`, `tools/fake_node.py`, `.gitignore`):**
+  - Updated `tools/fake_node.py` to v0.2.0 payload (`boot_id`, `fw: "fake-0.2.0"`), set `SERVER_URL` (`http://10.33.242.229:8000`) in `firmware/airaura_node/config.h`, and added `firmware/airaura_node/config.h` to `.gitignore`.
+
+
 
 

@@ -1,15 +1,27 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Header from "../components/Header";
 import { api } from "../api/client";
 import { categoryForAqi } from "../lib/aqi";
+import { useAutoRefresh, formatUpdatedTime } from "../hooks/useAutoRefresh";
 
 export default function PCBStations() {
   const nav = useNavigate();
   const [stations, setStations] = useState([]);
   const [sort, setSort] = useState("aqi-desc");
+  const [lastUpdated, setLastUpdated] = useState(null);
 
-  useEffect(() => { api.get("/stations").then(({ data }) => setStations(data.stations)); }, []);
+  const load = useCallback(async () => {
+    const { data } = await api.get("/stations");
+    setStations(data.stations || []);
+    setLastUpdated(new Date());
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  useAutoRefresh(load, 60000);
 
   const sorted = [...stations].sort((a, b) => {
     if (sort === "aqi-desc") return b.current.aqi - a.current.aqi;
@@ -26,8 +38,14 @@ export default function PCBStations() {
             <div className="text-[10px] uppercase tracking-[0.3em] text-[#94A3B8] mb-2">PPCB · Network</div>
             <h1 className="font-display text-3xl lg:text-4xl font-bold tracking-tight">Monitoring Stations</h1>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] uppercase tracking-[0.2em] text-[#94A3B8]">Sort</span>
+          <div className="flex items-center gap-4">
+            {lastUpdated && (
+              <span data-testid="last-updated-indicator" className="text-[11px] font-mono text-[#64748B]">
+                Updated {formatUpdatedTime(lastUpdated)}
+              </span>
+            )}
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] uppercase tracking-[0.2em] text-[#94A3B8]">Sort</span>
             <select
               data-testid="sort-select"
               value={sort}
@@ -38,6 +56,7 @@ export default function PCBStations() {
               <option value="aqi-asc">AQI · Low → High</option>
               <option value="name">Name · A → Z</option>
             </select>
+            </div>
           </div>
         </div>
 
@@ -65,13 +84,17 @@ export default function PCBStations() {
                 <div className="col-span-1 font-mono text-[10px] text-[#64748B]">{String(i + 1).padStart(2, "0")}</div>
                 <div className="col-span-3 flex items-center gap-2 min-w-0">
                   <span className="font-display font-semibold truncate">{s.name}</span>
-                  {s.current?.simulated === false ? (
-                    <span className="text-[9px] font-mono uppercase tracking-wider px-1.5 py-0.5 border border-emerald-500/40 bg-emerald-500/10 text-emerald-300 shrink-0">
-                      Live
-                    </span>
-                  ) : s.current?.node_status === "offline" ? (
+                  {s.current?.node_status === "offline" ? (
                     <span className="text-[9px] font-mono uppercase tracking-wider px-1.5 py-0.5 border border-slate-600/60 bg-slate-800/70 text-slate-300 shrink-0">
                       Offline
+                    </span>
+                  ) : s.current?.simulated === false && s.current?.node_status === "warming_up" ? (
+                    <span className="text-[9px] font-mono uppercase tracking-wider px-1.5 py-0.5 border border-amber-500/40 bg-amber-500/10 text-amber-300 shrink-0">
+                      Warming up
+                    </span>
+                  ) : s.current?.simulated === false ? (
+                    <span className="text-[9px] font-mono uppercase tracking-wider px-1.5 py-0.5 border border-emerald-500/40 bg-emerald-500/10 text-emerald-300 shrink-0">
+                      Live
                     </span>
                   ) : (
                     <span className="text-[9px] font-mono uppercase tracking-wider px-1.5 py-0.5 border border-[#334155] text-[#64748B] shrink-0">

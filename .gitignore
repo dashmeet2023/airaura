@@ -14,3 +14,4 @@ env/
 .env
 backend/.env
 *.db
+firmware/airaura_node/config.h

@@ -1,7 +1,21 @@
 import { categoryForAqi } from "../lib/aqi";
 import { Drop, Thermometer, CloudFog, Wind, Warning } from "@phosphor-icons/react";
 
+function formatOfflineSince(ts) {
+  if (!ts) return "Offline";
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return "Offline";
+  return `Offline since ${d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+}
+
 function getNodeChipMeta(reading) {
+  if (reading?.node_status === "offline") {
+    return {
+      label: formatOfflineSince(reading.last_seen || reading.timestamp),
+      cls: "border-slate-600/60 bg-slate-800/70 text-slate-300",
+      dot: "bg-slate-400",
+    };
+  }
   if (reading?.simulated === false && reading?.node_status === "warming_up") {
     return {
       label: "Warming up",
@@ -16,13 +30,6 @@ function getNodeChipMeta(reading) {
       dot: "bg-emerald-400 animate-pulse",
     };
   }
-  if (reading?.node_status === "offline") {
-    return {
-      label: "Offline",
-      cls: "border-slate-600/60 bg-slate-800/70 text-slate-300",
-      dot: "bg-slate-400",
-    };
-  }
   return {
     label: "Simulated data",
     cls: "border-[#334155] bg-[#0B1120] text-[#94A3B8]",
@@ -33,11 +40,12 @@ function getNodeChipMeta(reading) {
 export default function AQIBigCard({ station, reading }) {
   const cat = categoryForAqi(reading.aqi);
   const chip = getNodeChipMeta(reading);
+  const isOffline = reading?.node_status === "offline";
 
   return (
     <div data-testid="aqi-big-card" className="relative border border-[#1E293B] bg-[#111827] overflow-hidden">
-      <div className={`absolute inset-0 ${cat.bg} pointer-events-none`} />
-      <div className="absolute top-0 left-0 right-0 h-1" style={{ backgroundColor: cat.color }} />
+      <div className={`absolute inset-0 ${cat.bg} pointer-events-none ${isOffline ? "opacity-30" : ""}`} />
+      <div className="absolute top-0 left-0 right-0 h-1" style={{ backgroundColor: isOffline ? "#64748B" : cat.color }} />
       <div className="relative p-8 lg:p-10 grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2">
           <div className="flex flex-wrap items-center gap-2 mb-2">
@@ -58,13 +66,25 @@ export default function AQIBigCard({ station, reading }) {
                 High humidity — PM may read high
               </span>
             )}
+            {reading.pm_stale && (
+              <span
+                data-testid="aqi-pm-stale-badge"
+                className="inline-flex items-center gap-1.5 px-2.5 py-0.5 border border-amber-500/40 bg-amber-500/10 text-amber-300 text-[10px] font-mono tracking-wider"
+              >
+                PM sensor not responding
+              </span>
+            )}
           </div>
           <h2 className="font-display text-2xl font-bold tracking-tight" data-testid="station-name">{station.name}</h2>
           <div className="text-xs font-mono text-[#64748B] mt-1">{station.city} · {station.state} · {station.lat?.toFixed(3)}, {station.lng?.toFixed(3)}</div>
 
-          <div className="mt-8 flex items-end gap-6">
+          <div className={`mt-8 flex items-end gap-6 ${isOffline ? "opacity-60" : ""}`}>
             <div>
-              <div className="font-display font-bold text-7xl lg:text-8xl tracking-tighter leading-none" style={{ color: cat.color }} data-testid="aqi-value">
+              <div
+                className="font-display font-bold text-7xl lg:text-8xl tracking-tighter leading-none"
+                style={{ color: isOffline ? "#94A3B8" : cat.color }}
+                data-testid="aqi-value"
+              >
                 {reading.aqi}
               </div>
               <div className="text-xs font-mono uppercase tracking-[0.2em] text-[#64748B] mt-2" data-testid="aqi-method-label">
@@ -72,8 +92,8 @@ export default function AQIBigCard({ station, reading }) {
               </div>
               <div className="text-[11px] font-mono text-[#94A3B8] mt-1" data-testid="aqi-24h-inputs">
                 {reading.simulated
-                  ? `Current baseline: PM2.5 ${reading.pm25_24h ?? reading.pm25} · PM10 ${reading.pm10_24h ?? reading.pm10} µg/m³`
-                  : `24-h avg: PM2.5 ${reading.pm25_24h ?? reading.pm25} · PM10 ${reading.pm10_24h ?? reading.pm10} µg/m³`}
+                  ? `Current baseline: PM2.5 ${reading.pm25_24h ?? reading.pm25 ?? "—"} · PM10 ${reading.pm10_24h ?? reading.pm10 ?? "—"} µg/m³`
+                  : `24-h avg: PM2.5 ${reading.pm25_24h ?? reading.pm25 ?? "—"} · PM10 ${reading.pm10_24h ?? reading.pm10 ?? "—"} µg/m³`}
               </div>
             </div>
             <div className="pb-3">
@@ -87,18 +107,18 @@ export default function AQIBigCard({ station, reading }) {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-px bg-[#1E293B] border border-[#1E293B]">
-          <MetricTile icon={CloudFog} label="PM2.5" value={reading.pm25} unit="µg/m³" tag="Latest reading" />
-          <MetricTile icon={Wind} label="PM10" value={reading.pm10} unit="µg/m³" tag="Latest reading" />
-          <MetricTile icon={Thermometer} label="Temp" value={reading.temperature} unit="°C" />
-          <MetricTile icon={Drop} label="Humidity" value={reading.humidity} unit="%" />
+        <div className={`grid grid-cols-2 gap-px bg-[#1E293B] border border-[#1E293B] ${isOffline ? "opacity-60" : ""}`}>
+          <MetricTile icon={CloudFog} label="PM2.5" value={reading.pm25} unit="µg/m³" tag="Latest reading" stale={reading.pm_stale} offline={isOffline} />
+          <MetricTile icon={Wind} label="PM10" value={reading.pm10} unit="µg/m³" tag="Latest reading" stale={reading.pm_stale} offline={isOffline} />
+          <MetricTile icon={Thermometer} label="Temp" value={reading.temperature} unit="°C" offline={isOffline} />
+          <MetricTile icon={Drop} label="Humidity" value={reading.humidity} unit="%" offline={isOffline} />
         </div>
       </div>
     </div>
   );
 }
 
-function MetricTile({ icon: Icon, label, value, unit, tag }) {
+function MetricTile({ icon: Icon, label, value, unit, tag, stale, offline }) {
   return (
     <div className="bg-[#0B1120] p-4 flex flex-col gap-2" data-testid={`metric-${label.toLowerCase()}`}>
       <div className="flex items-center justify-between gap-2 text-[10px] uppercase tracking-[0.2em] text-[#64748B]">
@@ -107,8 +127,11 @@ function MetricTile({ icon: Icon, label, value, unit, tag }) {
         </span>
         {tag && <span className="text-[9px] font-mono tracking-wider text-[#94A3B8]">{tag}</span>}
       </div>
-      <div className="font-display font-bold text-2xl">{value}</div>
-      <div className="text-[10px] font-mono text-[#64748B]">{unit}</div>
+      <div className={`font-display font-bold text-2xl ${offline ? "text-slate-400" : ""}`}>{value ?? "—"}</div>
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[10px] font-mono text-[#64748B]">{unit}</span>
+        {stale && <span className="text-[9px] font-mono text-amber-300">PM sensor not responding</span>}
+      </div>
     </div>
   );
 }

@@ -10,6 +10,7 @@ import HealthTips from "../components/HealthTips";
 import SearchStations from "../components/SearchStations";
 import { useAuth } from "../contexts/AuthContext";
 import { api } from "../api/client";
+import { useAutoRefresh, formatUpdatedTime } from "../hooks/useAutoRefresh";
 import { ArrowsClockwise, Megaphone } from "@phosphor-icons/react";
 
 const ADVISORY_STYLES = {
@@ -31,10 +32,12 @@ export default function StudentDashboard() {
   const [history, setHistory] = useState([]);
   const [forecast, setForecast] = useState([]);
   const [advisories, setAdvisories] = useState([]);
+  const [lastUpdated, setLastUpdated] = useState(null);
+  const [refreshTick, setRefreshTick] = useState(0);
   const [loading, setLoading] = useState(true);
 
-  const load = useCallback(async (id) => {
-    setLoading(true);
+  const load = useCallback(async (id, silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const [s, h, f, adv] = await Promise.all([
         api.get(`/stations/${id}`),
@@ -42,18 +45,27 @@ export default function StudentDashboard() {
         api.get(`/stations/${id}/forecast`),
         api.get("/advisories").catch(() => ({ data: { advisories: [] } })),
       ]);
+      const cur = s.data.current;
+      if (cur?.node_id) {
+        api.get(`/nodes/${cur.node_id}/status`).catch(() => {});
+      }
       setStation(s.data.station);
-      setCurrent(s.data.current);
+      setCurrent(cur);
       setTips(s.data.health_tips);
       setHistory(h.data.history);
       setForecast(f.data.forecast);
       setAdvisories(adv.data.advisories || []);
+      setLastUpdated(new Date());
+      setRefreshTick((t) => t + 1);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
 
-  useEffect(() => { load(stationId); }, [stationId, load]);
+  useEffect(() => { load(stationId, false); }, [stationId, load]);
+
+  const silentRefresh = useCallback(() => load(stationId, true), [stationId, load]);
+  useAutoRefresh(silentRefresh, 60000);
 
   const activeAdvisories = advisories
     .filter((a) => !a.station_ids || a.station_ids.length === 0 || a.station_ids.includes(stationId))
@@ -72,13 +84,20 @@ export default function StudentDashboard() {
               Currently viewing readings from <span className="text-[#93C5FD]">{station?.name || "…"}</span>. Search any location below to compare.
             </p>
           </div>
-          <button
-            data-testid="refresh-button"
-            onClick={() => load(stationId)}
-            className="h-10 px-4 border border-[#1E293B] hover:border-[#3B82F6] hover:bg-[#111827] transition-all flex items-center gap-2 text-xs uppercase tracking-[0.18em]"
-          >
-            <ArrowsClockwise size={14} /> Refresh
-          </button>
+          <div className="flex items-center gap-3">
+            {lastUpdated && (
+              <span data-testid="last-updated-indicator" className="text-[11px] font-mono text-[#64748B]">
+                Updated {formatUpdatedTime(lastUpdated)}
+              </span>
+            )}
+            <button
+              data-testid="refresh-button"
+              onClick={() => load(stationId, false)}
+              className="h-10 px-4 border border-[#1E293B] hover:border-[#3B82F6] hover:bg-[#111827] transition-all flex items-center gap-2 text-xs uppercase tracking-[0.18em]"
+            >
+              <ArrowsClockwise size={14} /> Refresh
+            </button>
+          </div>
         </div>
 
         <div className="mb-8">
@@ -132,7 +151,7 @@ export default function StudentDashboard() {
                 <PollutantGrid reading={current} />
               </div>
               <div className="space-y-6">
-                <MLPredictionCard stationId={station.id} currentAqi={current.aqi} />
+                <MLPredictionCard stationId={station.id} currentAqi={current.aqi} refreshKey={refreshTick} />
                 <HealthTips tips={tips} category={current.category} />
                 <button
                   data-testid="view-detail-button"

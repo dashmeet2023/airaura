@@ -3,13 +3,15 @@ import { categoryForAqi } from "../lib/aqi";
 import { api, formatApiError } from "../api/client";
 import { Brain, TrendUp, TrendDown, Minus } from "@phosphor-icons/react";
 
-export default function MLPredictionCard({ stationId, currentAqi }) {
+export default function MLPredictionCard({ stationId, currentAqi, refreshKey = 0 }) {
   const [state, setState] = useState({ loading: true, data: null, error: null });
 
   useEffect(() => {
     if (!stationId) return;
     let cancelled = false;
-    setState({ loading: true, data: null, error: null });
+    if (refreshKey === 0) {
+      setState({ loading: true, data: null, error: null });
+    }
     api
       .get(`/stations/${stationId}/predict`)
       .then((res) => {
@@ -21,7 +23,7 @@ export default function MLPredictionCard({ stationId, currentAqi }) {
     return () => {
       cancelled = true;
     };
-  }, [stationId]);
+  }, [stationId, refreshKey]);
 
   if (state.loading) {
     return (
@@ -59,7 +61,7 @@ export default function MLPredictionCard({ stationId, currentAqi }) {
             <Brain size={14} /> ML Model Prediction
           </div>
           <span className="text-[9px] font-mono uppercase tracking-wider px-2 py-0.5 border border-amber-500/40 bg-amber-500/10 text-amber-300">
-            Warming up
+            {state.data.reason === "gap in data" ? "Gap in data" : "Warming up"}
           </span>
         </div>
         <div data-testid="ml-warming-up" className="font-display font-semibold text-base text-[#E2E8F0] mb-3">
@@ -69,7 +71,9 @@ export default function MLPredictionCard({ stationId, currentAqi }) {
           <div className="h-full bg-amber-400 transition-all duration-500" style={{ width: `${pct}%` }} />
         </div>
         <p className="text-[10px] text-[#64748B] leading-relaxed">
-          Uses PM2.5/PM10 daily averages from the sensor. At least {daysNeeded} days are needed to compute 7-day lag and rolling features.
+          {state.data.reason === "gap in data"
+            ? `Needs ${daysNeeded} consecutive covered days (>=12 h/day) of PM2.5/PM10 sensor averages.`
+            : `Uses PM2.5/PM10 daily averages from the sensor. At least ${daysNeeded} consecutive days (>=12 h/day) are needed.`}
         </p>
       </div>
     );

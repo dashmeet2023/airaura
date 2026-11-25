@@ -22,11 +22,6 @@ export default function Login() {
     nav(res.user.role === "pcb_official" ? "/pcb" : "/student");
   };
 
-  const fillDemo = () => {
-    if (tab === "student") { setEmail("student@thapar.edu"); setPassword("thapar@123"); }
-    else { setEmail("admin@ppcb.gov.in"); setPassword("admin@123"); }
-  };
-
   return (
     <div className="min-h-screen grid lg:grid-cols-2">
       {/* left visual */}
@@ -92,10 +87,6 @@ export default function Login() {
 
             <button data-testid="login-submit" type="submit" disabled={loading} className="w-full h-12 bg-[#3B82F6] hover:bg-[#2563EB] disabled:opacity-50 transition-colors flex items-center justify-center gap-2 text-sm uppercase tracking-[0.18em]">
               {loading ? "Signing in…" : <>Enter dashboard <ArrowRight size={16} /></>}
-            </button>
-
-            <button type="button" onClick={fillDemo} data-testid="login-demo-button" className="w-full h-10 border border-[#1E293B] hover:border-[#3B82F6] hover:bg-[#111827] transition-all text-[11px] uppercase tracking-[0.18em] text-[#94A3B8]">
-              Use demo credentials
             </button>
           </form>
 

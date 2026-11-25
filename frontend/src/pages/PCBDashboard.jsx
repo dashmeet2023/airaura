@@ -1,18 +1,32 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Header from "../components/Header";
 import { api } from "../api/client";
 import { categoryForAqi } from "../lib/aqi";
+import { useAutoRefresh, formatUpdatedTime } from "../hooks/useAutoRefresh";
 import { TrendUp, TrendDown, Buildings, ShieldWarning } from "@phosphor-icons/react";
 
 export default function PCBDashboard() {
   const nav = useNavigate();
   const [data, setData] = useState(null);
   const [filter, setFilter] = useState("all");
+  const [lastUpdated, setLastUpdated] = useState(null);
+
+  const load = useCallback(async () => {
+    const { data: overview } = await api.get("/overview");
+    const nodeStations = (overview.stations || []).filter((s) => s.current?.node_id);
+    await Promise.all(
+      nodeStations.map((s) => api.get(`/nodes/${s.current.node_id}/status`).catch(() => {}))
+    );
+    setData(overview);
+    setLastUpdated(new Date());
+  }, []);
 
   useEffect(() => {
-    api.get("/overview").then(({ data }) => setData(data));
-  }, []);
+    load();
+  }, [load]);
+
+  useAutoRefresh(load, 60000);
 
   if (!data) {
     return (
@@ -26,20 +40,30 @@ export default function PCBDashboard() {
   const { summary, hotspots, cleanest, stations } = data;
   const cat = categoryForAqi(summary.average_aqi);
   const liveCount = stations.filter(
-    (s) => s.simulated === false || s.source === "airaura-node" || s.current?.simulated === false
+    (s) => (s.simulated === false || s.source === "airaura-node" || s.current?.simulated === false) && s.current?.node_status !== "offline"
   ).length;
-  const simCount = stations.length - liveCount;
-  const stationsSub = `${liveCount} live sensor${liveCount === 1 ? "" : "s"} · ${simCount} simulated`;
+  const offlineCount = stations.filter((s) => s.current?.node_status === "offline").length;
+  const simCount = stations.length - liveCount - offlineCount;
+  const stationsSub = offlineCount > 0
+    ? `${liveCount} live sensor · ${offlineCount} offline · ${simCount} simulated`
+    : `${liveCount} live sensor${liveCount === 1 ? "" : "s"} · ${simCount} simulated`;
   const filtered = filter === "all" ? stations : stations.filter((s) => s.current.category.code === filter);
 
   return (
     <div className="min-h-screen">
       <Header />
       <main className="max-w-[1400px] mx-auto px-6 lg:px-10 py-10 scroll-mt-20">
-        <div className="mb-10">
-          <div className="text-[10px] uppercase tracking-[0.3em] text-[#94A3B8] mb-2">PPCB · Regional Command</div>
-          <h1 className="font-display text-3xl lg:text-4xl font-bold tracking-tight">Punjab Belt Overview</h1>
-          <p className="text-sm text-[#94A3B8] mt-2">Real-time aggregate of {summary.total_stations} monitoring stations across the Punjab–Chandigarh–Delhi corridor.</p>
+        <div className="flex flex-wrap items-end justify-between gap-4 mb-10">
+          <div>
+            <div className="text-[10px] uppercase tracking-[0.3em] text-[#94A3B8] mb-2">PPCB · Regional Command</div>
+            <h1 className="font-display text-3xl lg:text-4xl font-bold tracking-tight">Punjab Belt Overview</h1>
+            <p className="text-sm text-[#94A3B8] mt-2">Real-time aggregate of {summary.total_stations} monitoring stations across the Punjab–Chandigarh–Delhi corridor.</p>
+          </div>
+          {lastUpdated && (
+            <span data-testid="last-updated-indicator" className="text-[11px] font-mono text-[#64748B]">
+              Updated {formatUpdatedTime(lastUpdated)}
+            </span>
+          )}
         </div>
 
         {/* KPI ROW */}
@@ -126,6 +150,13 @@ export default function PCBDashboard() {
 }
 
 function SourceBadge({ current }) {
+  if (current?.node_status === "offline") {
+    return (
+      <span className="text-[9px] font-mono uppercase tracking-wider px-1.5 py-0.5 border border-slate-600/60 bg-slate-800/70 text-slate-300">
+        Offline
+      </span>
+    );
+  }
   if (current?.simulated === false && current?.node_status === "warming_up") {
     return (
       <span className="text-[9px] font-mono uppercase tracking-wider px-1.5 py-0.5 border border-amber-500/40 bg-amber-500/10 text-amber-300">
@@ -137,13 +168,6 @@ function SourceBadge({ current }) {
     return (
       <span className="text-[9px] font-mono uppercase tracking-wider px-1.5 py-0.5 border border-emerald-500/40 bg-emerald-500/10 text-emerald-300">
         Live sensor
-      </span>
-    );
-  }
-  if (current?.node_status === "offline") {
-    return (
-      <span className="text-[9px] font-mono uppercase tracking-wider px-1.5 py-0.5 border border-slate-600/60 bg-slate-800/70 text-slate-300">
-        Offline
       </span>
     );
   }
