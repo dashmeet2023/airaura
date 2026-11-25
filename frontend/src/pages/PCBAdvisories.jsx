@@ -2,7 +2,15 @@ import { useCallback, useEffect, useState } from "react";
 import Header from "../components/Header";
 import { api, formatApiError } from "../api/client";
 import { useAutoRefresh, formatUpdatedTime } from "../hooks/useAutoRefresh";
-import { Megaphone } from "@phosphor-icons/react";
+import { Megaphone, Trash } from "@phosphor-icons/react";
+
+const EMPTY_FORM = {
+  title: "",
+  message: "",
+  severity: "moderate",
+  station_ids: [],
+  expires_at: "",
+};
 
 const SEVERITIES = [
   { id: "good", label: "Good", color: "#10B981" },
@@ -16,9 +24,12 @@ const SEVERITIES = [
 export default function PCBAdvisories() {
   const [advisories, setAdvisories] = useState([]);
   const [stations, setStations] = useState([]);
-  const [form, setForm] = useState({ title: "", message: "", severity: "moderate", station_ids: [] });
+  const [form, setForm] = useState(EMPTY_FORM);
   const [err, setErr] = useState("");
+  const [feedErr, setFeedErr] = useState("");
   const [busy, setBusy] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(null);
 
   const load = useCallback(async () => {
@@ -48,13 +59,42 @@ export default function PCBAdvisories() {
     e.preventDefault();
     setErr(""); setBusy(true);
     try {
-      await api.post("/advisories", form);
-      setForm({ title: "", message: "", severity: "moderate", station_ids: [] });
+      const payload = {
+        title: form.title,
+        message: form.message,
+        severity: form.severity,
+        station_ids: form.station_ids,
+      };
+      if (form.expires_at) {
+        const expDate = new Date(form.expires_at);
+        if (Number.isNaN(expDate.getTime())) {
+          setErr("Invalid expiry date/time");
+          return;
+        }
+        payload.expires_at = expDate.toISOString();
+      }
+      await api.post("/advisories", payload);
+      setForm(EMPTY_FORM);
       await load();
     } catch (e) {
       setErr(formatApiError(e));
     } finally {
       setBusy(false);
+    }
+  };
+
+  const handleDelete = async (id) => {
+    setFeedErr("");
+    setDeletingId(id);
+    try {
+      await api.delete(`/advisories/${id}`);
+      setConfirmDeleteId(null);
+      setAdvisories((prev) => prev.filter((item) => item.id !== id));
+      await load();
+    } catch (e) {
+      setFeedErr(formatApiError(e));
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -116,6 +156,31 @@ export default function PCBAdvisories() {
               </div>
             </div>
             <div>
+              <div className="flex items-center justify-between mb-2">
+                <label htmlFor="advisory-expires-at" className="text-[10px] uppercase tracking-[0.2em] text-[#94A3B8]">
+                  Expires at (optional · default 48 h)
+                </label>
+                {form.expires_at && (
+                  <button
+                    type="button"
+                    data-testid="advisory-expires-clear"
+                    onClick={() => setForm({ ...form, expires_at: "" })}
+                    className="text-[10px] uppercase tracking-[0.15em] text-[#64748B] hover:text-white transition-colors"
+                  >
+                    Reset to 48 h
+                  </button>
+                )}
+              </div>
+              <input
+                id="advisory-expires-at"
+                data-testid="advisory-expires-at"
+                type="datetime-local"
+                value={form.expires_at}
+                onChange={(e) => setForm({ ...form, expires_at: e.target.value })}
+                className="w-full h-11 px-4 bg-[#0B1120] border border-[#1E293B] focus:border-[#3B82F6] outline-none text-sm text-[#F8FAFC] [color-scheme:dark] transition-colors"
+              />
+            </div>
+            <div>
               <div className="text-[10px] uppercase tracking-[0.2em] text-[#94A3B8] mb-2">Target stations ({form.station_ids.length})</div>
               <div className="max-h-48 overflow-auto border border-[#1E293B] divide-y divide-[#1E293B]">
                 {stations.map((s) => (
@@ -141,22 +206,86 @@ export default function PCBAdvisories() {
 
           {/* FEED */}
           <div className="lg:col-span-3 space-y-4" data-testid="advisory-feed">
+            {feedErr && (
+              <div data-testid="advisory-feed-error" className="border border-red-500/40 bg-red-500/10 text-red-300 text-xs p-3 font-mono">
+                {feedErr}
+              </div>
+            )}
             {advisories.length === 0 && (
               <div className="border border-[#1E293B] bg-[#111827] p-10 text-center text-sm text-[#64748B]">No advisories yet.</div>
             )}
             {advisories.map((a) => {
               const sev = SEVERITIES.find((s) => s.id === a.severity) || SEVERITIES[1];
+              const expDate = a.expires_at ? new Date(a.expires_at) : null;
+              const hasValidExp = Boolean(expDate && !Number.isNaN(expDate.getTime()));
+              const isExpired = hasValidExp && expDate.getTime() <= Date.now();
+              const confirming = confirmDeleteId === a.id;
               return (
-                <div key={a.id} className="border border-[#1E293B] bg-[#111827] p-6 relative" data-testid={`advisory-${a.id}`}>
+                <div
+                  key={a.id}
+                  className={`border border-[#1E293B] bg-[#111827] p-6 relative ${isExpired ? "opacity-70" : ""}`}
+                  data-testid={`advisory-${a.id}`}
+                >
                   <div className="absolute top-0 left-0 bottom-0 w-1" style={{ backgroundColor: sev.color }} />
-                  <div className="flex items-baseline justify-between gap-4 mb-2">
+                  <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
                     <h3 className="font-display text-lg font-bold tracking-tight">{a.title}</h3>
-                    <span className="text-[10px] uppercase tracking-[0.2em]" style={{ color: sev.textColor || sev.color }}>{sev.label}</span>
+                    <div className="flex items-center gap-3">
+                      {isExpired && (
+                        <span
+                          data-testid={`advisory-expired-${a.id}`}
+                          className="text-[10px] font-mono uppercase tracking-[0.18em] px-2 py-0.5 border border-[#334155] bg-[#1E293B]/60 text-[#94A3B8]"
+                        >
+                          Expired
+                        </span>
+                      )}
+                      <span className="text-[10px] uppercase tracking-[0.2em]" style={{ color: sev.textColor || sev.color }}>
+                        {sev.label}
+                      </span>
+                      {!confirming ? (
+                        <button
+                          type="button"
+                          data-testid={`advisory-delete-${a.id}`}
+                          onClick={() => setConfirmDeleteId(a.id)}
+                          title="Delete advisory"
+                          className="text-[10px] uppercase tracking-[0.18em] px-2.5 py-1 border border-[#1E293B] text-[#94A3B8] hover:text-red-300 hover:border-red-500/50 transition-colors flex items-center gap-1"
+                        >
+                          <Trash size={12} /> Delete
+                        </button>
+                      ) : (
+                        <div className="flex items-center gap-1.5" data-testid={`advisory-delete-confirm-box-${a.id}`}>
+                          <button
+                            type="button"
+                            data-testid={`advisory-delete-confirm-${a.id}`}
+                            disabled={deletingId === a.id}
+                            onClick={() => handleDelete(a.id)}
+                            className="text-[10px] uppercase tracking-[0.18em] px-2.5 py-1 border border-red-500/60 bg-red-500/15 text-red-300 hover:bg-red-500/25 disabled:opacity-50 transition-colors"
+                          >
+                            {deletingId === a.id ? "Deleting…" : "Confirm delete"}
+                          </button>
+                          <button
+                            type="button"
+                            data-testid={`advisory-delete-cancel-${a.id}`}
+                            disabled={deletingId === a.id}
+                            onClick={() => setConfirmDeleteId(null)}
+                            className="text-[10px] uppercase tracking-[0.18em] px-2 py-1 border border-[#1E293B] text-[#94A3B8] hover:text-white transition-colors"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                   <p className="text-sm text-[#94A3B8] leading-relaxed">{a.message}</p>
-                  <div className="mt-4 flex items-center justify-between text-[10px] font-mono uppercase tracking-widest text-[#64748B]">
+                  <div className="mt-4 flex flex-wrap items-center justify-between gap-2 text-[10px] font-mono uppercase tracking-widest text-[#64748B]">
                     <div>{a.author_name}</div>
-                    <div>{new Date(a.created_at).toLocaleString()}</div>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <span>Published {new Date(a.created_at).toLocaleString()}</span>
+                      {hasValidExp && (
+                        <span data-testid={`advisory-expires-label-${a.id}`}>
+                          {isExpired ? "Expired" : "Expires"} {expDate.toLocaleString()}
+                        </span>
+                      )}
+                    </div>
                   </div>
                   {a.station_ids?.length > 0 && (
                     <div className="mt-3 flex flex-wrap gap-1">

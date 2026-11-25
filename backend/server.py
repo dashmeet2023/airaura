@@ -18,7 +18,7 @@ from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from aqi_data import (
     STATIONS,
@@ -78,24 +78,43 @@ def create_access_token(user_id: str, email: str, role: str) -> str:
     return jwt.encode(payload, jwt_secret(), algorithm=JWT_ALGORITHM)
 
 
-async def get_current_user(
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
-) -> dict:
-    if credentials is None or not credentials.credentials:
-        raise HTTPException(status_code=401, detail="Not authenticated")
+async def _resolve_user_from_token(token: str) -> dict:
     try:
-        payload = jwt.decode(credentials.credentials, jwt_secret(), algorithms=[JWT_ALGORITHM])
+        payload = jwt.decode(token, jwt_secret(), algorithms=[JWT_ALGORITHM])
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token")
-    user = await db.users.find_one({"_id": ObjectId(payload["sub"])})
+    try:
+        oid = ObjectId(payload["sub"])
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    user = await db.users.find_one({"_id": oid})
     if user is None:
         raise HTTPException(status_code=401, detail="User not found")
     user["id"] = str(user["_id"])
     user.pop("_id", None)
     user.pop("password_hash", None)
     return user
+
+
+async def get_current_user(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+) -> dict:
+    if credentials is None or not credentials.credentials:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    return await _resolve_user_from_token(credentials.credentials)
+
+
+async def get_optional_user(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+) -> Optional[dict]:
+    if credentials is None or not credentials.credentials:
+        return None
+    try:
+        return await _resolve_user_from_token(credentials.credentials)
+    except HTTPException:
+        return None
 
 
 def require_role(*roles: str):
@@ -120,11 +139,41 @@ class LoginIn(BaseModel):
     password: str
 
 
+def _parse_utc_datetime(val: datetime | str) -> datetime:
+    if isinstance(val, str):
+        s = val.strip()
+        if s.endswith("Z"):
+            s = s[:-1] + "+00:00"
+        dt = datetime.fromisoformat(s)
+    elif isinstance(val, datetime):
+        dt = val
+    else:
+        raise ValueError("Invalid datetime value")
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
 class AdvisoryIn(BaseModel):
     title: str
     message: str
     severity: str = Field(default="moderate")  # good | satisfactory | moderate | poor | very_poor | severe
     station_ids: List[str] = Field(default_factory=list)
+    expires_at: Optional[datetime] = None
+
+    @field_validator("expires_at", mode="before")
+    @classmethod
+    def _parse_expires_at(cls, v):
+        if v is None:
+            return None
+        if isinstance(v, str):
+            s = v.strip()
+            if not s:
+                return None
+            return _parse_utc_datetime(s)
+        if isinstance(v, datetime):
+            return _parse_utc_datetime(v)
+        raise ValueError("Invalid expires_at datetime")
 
 
 # ---------- Auth Routes ----------
@@ -377,11 +426,29 @@ async def overview(user: dict = Depends(require_role("pcb_official"))):
     }
 
 
+def _is_advisory_active(doc: dict, now: datetime) -> bool:
+    raw_exp = doc.get("expires_at")
+    if raw_exp is None or raw_exp == "":
+        return True
+    try:
+        return _parse_utc_datetime(raw_exp) > now
+    except ValueError:
+        return False
+
+
 # ---------- Advisories ----------
 @api.get("/advisories")
-async def list_advisories():
-    docs = await db.advisories.find({}, {"_id": 0}).sort("created_at", -1).to_list(100)
-    return {"advisories": docs}
+async def list_advisories(
+    active_only: Optional[bool] = None,
+    user: Optional[dict] = Depends(get_optional_user),
+):
+    docs = await db.advisories.find({}, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    is_pcb = user is not None and user.get("role") == "pcb_official"
+    only_active = (not is_pcb) or bool(active_only)
+    if only_active:
+        now = datetime.now(timezone.utc)
+        docs = [d for d in docs if _is_advisory_active(d, now)]
+    return {"advisories": docs[:100]}
 
 
 @api.post("/advisories")
@@ -389,6 +456,8 @@ async def create_advisory(
     data: AdvisoryIn,
     user: dict = Depends(require_role("pcb_official")),
 ):
+    now = datetime.now(timezone.utc)
+    exp_dt = data.expires_at if data.expires_at is not None else now + timedelta(hours=48)
     doc = {
         "id": str(uuid.uuid4()),
         "title": data.title,
@@ -397,11 +466,23 @@ async def create_advisory(
         "station_ids": data.station_ids,
         "author_name": user.get("name"),
         "author_email": user.get("email"),
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": now.isoformat(),
+        "expires_at": exp_dt.isoformat(),
     }
     await db.advisories.insert_one(doc)
     doc.pop("_id", None)
     return {"advisory": doc}
+
+
+@api.delete("/advisories/{advisory_id}")
+async def delete_advisory(
+    advisory_id: str,
+    user: dict = Depends(require_role("pcb_official")),
+):
+    res = await db.advisories.delete_one({"id": advisory_id})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Advisory not found")
+    return {"deleted": True, "id": advisory_id}
 
 
 @api.get("/")
@@ -486,32 +567,38 @@ async def on_startup():
             )
             logger.info("Updated password for: %s", acc["email"])
 
-    # Seed sample advisories if empty
-    count = await db.advisories.count_documents({})
-    if count == 0:
-        samples = [
-            {
-                "id": str(uuid.uuid4()),
-                "title": "Stubble Burning Alert - Ludhiana Belt",
-                "message": "Elevated PM2.5 levels detected across Ludhiana region due to paddy stubble burning. Residents advised to wear N95 masks outdoors.",
-                "severity": "severe",
-                "station_ids": ["ludhiana-civil", "ludhiana-focal"],
-                "author_name": "PPCB Administrator",
-                "author_email": "admin@ppcb.gov.in",
-                "created_at": datetime.now(timezone.utc).isoformat(),
-            },
-            {
-                "id": str(uuid.uuid4()),
-                "title": "Improved Air Quality - Patiala",
-                "message": "AQI levels in Patiala have improved to moderate range following overnight rainfall. Outdoor activities permissible with caution.",
-                "severity": "moderate",
-                "station_ids": ["patiala-city", "thapar-campus"],
-                "author_name": "PPCB Administrator",
-                "author_email": "admin@ppcb.gov.in",
-                "created_at": (datetime.now(timezone.utc) - timedelta(hours=6)).isoformat(),
-            },
-        ]
-        await db.advisories.insert_many(samples)
+    # Seed sample advisories if empty (non-production only)
+    if env != "production":
+        count = await db.advisories.count_documents({})
+        if count == 0:
+            now = datetime.now(timezone.utc)
+            samples = [
+                {
+                    "id": str(uuid.uuid4()),
+                    "title": "Stubble Burning Alert - Ludhiana Belt",
+                    "message": "Elevated PM2.5 levels detected across Ludhiana region due to paddy stubble burning. Residents advised to wear N95 masks outdoors.",
+                    "severity": "severe",
+                    "station_ids": ["ludhiana-civil", "ludhiana-focal"],
+                    "author_name": "PPCB Administrator",
+                    "author_email": "admin@ppcb.gov.in",
+                    "created_at": now.isoformat(),
+                    "expires_at": (now + timedelta(hours=48)).isoformat(),
+                },
+                {
+                    "id": str(uuid.uuid4()),
+                    "title": "Improved Air Quality - Patiala",
+                    "message": "AQI levels in Patiala have improved to moderate range following overnight rainfall. Outdoor activities permissible with caution.",
+                    "severity": "moderate",
+                    "station_ids": ["patiala-city", "thapar-campus"],
+                    "author_name": "PPCB Administrator",
+                    "author_email": "admin@ppcb.gov.in",
+                    "created_at": (now - timedelta(hours=6)).isoformat(),
+                    "expires_at": (now + timedelta(hours=42)).isoformat(),
+                },
+            ]
+            await db.advisories.insert_many(samples)
+    else:
+        logger.info("ENV=production; skipping sample advisory seed")
 
     app.state.aggregation_task = asyncio.create_task(aggregation_loop(db))
 

@@ -79,6 +79,16 @@
   - Fixed the v0.2.0 per-minute reboot caused by an lwIP `assert failed: pbuf_free` crash on stack-allocated `WiFiClient`/`WiFiClientSecure` instances during HTTP POST (not a USB power brownout).
   - Bumped `FW_VERSION` to `"0.2.1"`, moved `plainClient` and `secureClient` to globals, set `http.setReuse(false)`, `http.setConnectTimeout(5000)`, explicit `.stop()` after `http.end()`, `WiFi.setSleep(false)` in `setup()`, and defaulted `ENABLE_LOCAL_PAGE` to `false` in `config.example.h`.
 
+### Advisory Delete & Expiry
+- **Backend (`backend/server.py`):**
+  - Added `DELETE /api/advisories/{advisory_id}` (`pcb_official` only, returning `404` when absent).
+  - Added optional `expires_at` on `AdvisoryIn` / `POST /api/advisories`, normalizing timestamps to UTC ISO-8601 and defaulting to `created_at + 48h` when omitted or blank.
+  - Updated `GET /api/advisories` to use optional authentication (`get_optional_user`) so students and unauthenticated callers only receive non-expired advisories (`expires_at > now`), while `pcb_official` retains full visibility (with optional `?active_only=true` filter).
+  - Guarded startup sample advisory seeding behind `env != "production"` (including `expires_at` on dev samples) and removed the existing `"Improved Air Quality - Patiala"` sample advisory.
+- **Frontend (`frontend/src/pages/PCBAdvisories.jsx`, `frontend/src/pages/StudentDashboard.jsx`):**
+  - Added an inline two-step `Delete` -> `Confirm delete` / `Cancel` control on each advisory card in `PCBAdvisories.jsx`, an optional `Expires at (optional · default 48 h)` composer input, and `"Expired"` / expiry timestamp indicators on cards.
+  - Added client-side expiry filtering in `StudentDashboard.jsx` so expired advisories are excluded from the active advisory banner.
+
 
 
 

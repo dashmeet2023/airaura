@@ -67,7 +67,13 @@ export default function StudentDashboard() {
   const silentRefresh = useCallback(() => load(stationId, true), [stationId, load]);
   useAutoRefresh(silentRefresh, 60000);
 
+  const nowMs = Date.now();
   const activeAdvisories = advisories
+    .filter((a) => {
+      if (!a.expires_at) return true;
+      const expMs = new Date(a.expires_at).getTime();
+      return !Number.isNaN(expMs) && expMs > nowMs;
+    })
     .filter((a) => !a.station_ids || a.station_ids.length === 0 || a.station_ids.includes(stationId))
     .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
     .slice(0, 3);
