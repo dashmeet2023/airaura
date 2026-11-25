@@ -41,7 +41,7 @@ export default function LocationDetail() {
             <AQIBigCard station={data.station} reading={data.current} />
             <div className="grid lg:grid-cols-3 gap-6">
               <div className="lg:col-span-2 space-y-6">
-                <TrendChart data={history} title="24-Hour AQI Trend" />
+                <TrendChart data={history} title="24-hour AQI trend (rolling 24-h avg)" />
                 <PollutantGrid reading={data.current} />
               </div>
               <HealthTips tips={data.health_tips} category={data.current.category} />

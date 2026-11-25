@@ -45,4 +45,18 @@
   - Added `Simulated forecast — model in development` badge to `ForecastStrip.jsx` and live/simulated sensor badges on `PCBDashboard.jsx` and `PCBStations.jsx`.
   - Added browser verification screenshots in `docs/screenshots/`.
 
+### UI Review Fixes
+- **Backend (`backend/ingest.py`, `backend/aqi_data.py`):**
+  - Added `pm25_24h` and `pm10_24h` to `current_reading` payloads for both live hardware nodes (24h rolling mean) and simulated stations (current baseline).
+  - Updated `resolve_station_history_24h()` and `history_24h()` to compute 24-hour rolling CPCB AQI for each hourly point (using available data when fewer than 24 hours exist) so the 24h trend aligns with the headline AQI.
+- **Frontend (`AQIBigCard.jsx`, `PCBDashboard.jsx`, `StudentDashboard.jsx`, `LocationDetail.jsx`, `PollutantGrid.jsx`, `index.css`):**
+  - Labeled the headline AQI as `"CPCB AQI · 24-h avg"`, displayed the `pm25_24h`/`pm10_24h` averages beneath the number, and added `"Latest reading"` tags on the PM2.5 and PM10 tiles.
+  - Updated PCB Overview `Active Stations` KPI subtitle to dynamic `"X live sensor · Y simulated"` counts.
+  - Updated trend chart title to `"24-hour AQI trend (rolling 24-h avg)"` in `StudentDashboard.jsx` and `LocationDetail.jsx`.
+  - Added an `Active Advisories` banner above `AQIBigCard` on `StudentDashboard.jsx` filtering station-targeted and global advisories (sorted newest first, max 3, styled by CPCB severity).
+  - Changed `PollutantGrid.jsx` temperature and humidity bars to neutral slate (`#94A3B8`) instead of the AQI danger scale, and added `scroll-padding-top` / `scroll-mt-20` for sticky header scroll clearance.
+- **Simulator (`tools/fake_node.py`):**
+  - Adjusted diurnal curves to Patiala local time (IST) with realistic winter temperatures (`≈7 °C` at night to `≈22 °C` mid-afternoon) and higher nighttime humidity (up to `95%`).
+
+
 

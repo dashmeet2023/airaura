@@ -18,6 +18,10 @@
     --aa-accent: #93C5FD;
 }
 
+html {
+    scroll-padding-top: 5rem;
+}
+
 html, body, #root {
     background-color: var(--aa-bg);
     color: var(--aa-text);

@@ -5,8 +5,8 @@ export default function PollutantGrid({ reading }) {
         { key: "pm25", label: "PM 2.5", value: reading.pm25, unit: "µg/m³", max: 250 },
         { key: "pm10", label: "PM 10", value: reading.pm10, unit: "µg/m³", max: 430 },
         { key: "gas_index", label: "MQ-135 gas index", value: reading.gas_index, unit: "Rs/R0", note: "uncalibrated", max: 3.0 },
-        { key: "temperature", label: "Temperature", value: reading.temperature, unit: "°C", max: 50 },
-        { key: "humidity", label: "Humidity", value: reading.humidity, unit: "%", max: 100 },
+        { key: "temperature", label: "Temperature", value: reading.temperature, unit: "°C", max: 50, neutral: true },
+        { key: "humidity", label: "Humidity", value: reading.humidity, unit: "%", max: 100, neutral: true },
       ]
     : [
         { key: "pm25", label: "PM 2.5", value: reading.pm25, unit: "µg/m³", max: 250 },
@@ -36,7 +36,9 @@ export default function PollutantGrid({ reading }) {
         {items.map((it) => {
           const val = typeof it.value === "number" ? it.value : 0;
           const pct = Math.min(100, Math.max(0, (val / it.max) * 100));
-          const color = pct > 80 ? "#EF4444" : pct > 55 ? "#F97316" : pct > 30 ? "#F59E0B" : "#10B981";
+          const color = it.neutral
+            ? "#94A3B8"
+            : pct > 80 ? "#EF4444" : pct > 55 ? "#F97316" : pct > 30 ? "#F59E0B" : "#10B981";
           return (
             <div key={it.key} data-testid={`pollutant-${it.key}`}>
               <div className="flex items-baseline justify-between gap-2 mb-2">

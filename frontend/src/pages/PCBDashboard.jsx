@@ -25,12 +25,17 @@ export default function PCBDashboard() {
 
   const { summary, hotspots, cleanest, stations } = data;
   const cat = categoryForAqi(summary.average_aqi);
+  const liveCount = stations.filter(
+    (s) => s.simulated === false || s.source === "airaura-node" || s.current?.simulated === false
+  ).length;
+  const simCount = stations.length - liveCount;
+  const stationsSub = `${liveCount} live sensor${liveCount === 1 ? "" : "s"} · ${simCount} simulated`;
   const filtered = filter === "all" ? stations : stations.filter((s) => s.current.category.code === filter);
 
   return (
     <div className="min-h-screen">
       <Header />
-      <main className="max-w-[1400px] mx-auto px-6 lg:px-10 py-10">
+      <main className="max-w-[1400px] mx-auto px-6 lg:px-10 py-10 scroll-mt-20">
         <div className="mb-10">
           <div className="text-[10px] uppercase tracking-[0.3em] text-[#94A3B8] mb-2">PPCB · Regional Command</div>
           <h1 className="font-display text-3xl lg:text-4xl font-bold tracking-tight">Punjab Belt Overview</h1>
@@ -40,7 +45,7 @@ export default function PCBDashboard() {
         {/* KPI ROW */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-px bg-[#1E293B] border border-[#1E293B] mb-8">
           <KPI label="Regional Avg AQI" value={summary.average_aqi} accent={cat.color} sub={cat.label} testid="kpi-avg" />
-          <KPI label="Active Stations" value={summary.total_stations} icon={Buildings} sub="online" testid="kpi-stations" />
+          <KPI label="Active Stations" value={summary.total_stations} icon={Buildings} sub={stationsSub} testid="kpi-stations" />
           <KPI label="Poor to Severe Zones" value={(summary.buckets.severe || 0) + (summary.buckets.very_poor || 0) + (summary.buckets.poor || 0)} accent="#EF4444" icon={ShieldWarning} sub="needs action" testid="kpi-bad" />
           <KPI label="Clean Zones" value={(summary.buckets.good || 0) + (summary.buckets.satisfactory || 0)} accent="#10B981" sub="acceptable" testid="kpi-good" />
         </div>

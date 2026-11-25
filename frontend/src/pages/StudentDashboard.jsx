@@ -10,7 +10,16 @@ import HealthTips from "../components/HealthTips";
 import SearchStations from "../components/SearchStations";
 import { useAuth } from "../contexts/AuthContext";
 import { api } from "../api/client";
-import { ArrowsClockwise } from "@phosphor-icons/react";
+import { ArrowsClockwise, Megaphone } from "@phosphor-icons/react";
+
+const ADVISORY_STYLES = {
+  good: { label: "Good", accent: "#10B981", badge: "border-emerald-500/40 bg-emerald-500/10 text-emerald-300" },
+  satisfactory: { label: "Satisfactory", accent: "#84CC16", badge: "border-lime-500/40 bg-lime-500/10 text-lime-300" },
+  moderate: { label: "Moderate", accent: "#F59E0B", badge: "border-amber-500/40 bg-amber-500/10 text-amber-300" },
+  poor: { label: "Poor", accent: "#F97316", badge: "border-orange-500/40 bg-orange-500/10 text-orange-300" },
+  very_poor: { label: "Very Poor", accent: "#EF4444", badge: "border-red-500/40 bg-red-500/10 text-red-300" },
+  severe: { label: "Severe", accent: "#7F1D1D", badge: "border-red-700/60 bg-red-900/25 text-red-300" },
+};
 
 export default function StudentDashboard() {
   const { user } = useAuth();
@@ -21,21 +30,24 @@ export default function StudentDashboard() {
   const [tips, setTips] = useState([]);
   const [history, setHistory] = useState([]);
   const [forecast, setForecast] = useState([]);
+  const [advisories, setAdvisories] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async (id) => {
     setLoading(true);
     try {
-      const [s, h, f] = await Promise.all([
+      const [s, h, f, adv] = await Promise.all([
         api.get(`/stations/${id}`),
         api.get(`/stations/${id}/history`),
         api.get(`/stations/${id}/forecast`),
+        api.get("/advisories").catch(() => ({ data: { advisories: [] } })),
       ]);
       setStation(s.data.station);
       setCurrent(s.data.current);
       setTips(s.data.health_tips);
       setHistory(h.data.history);
       setForecast(f.data.forecast);
+      setAdvisories(adv.data.advisories || []);
     } finally {
       setLoading(false);
     }
@@ -43,10 +55,15 @@ export default function StudentDashboard() {
 
   useEffect(() => { load(stationId); }, [stationId, load]);
 
+  const activeAdvisories = advisories
+    .filter((a) => !a.station_ids || a.station_ids.length === 0 || a.station_ids.includes(stationId))
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+    .slice(0, 3);
+
   return (
     <div className="min-h-screen">
       <Header />
-      <main className="max-w-[1400px] mx-auto px-6 lg:px-10 py-10">
+      <main className="max-w-[1400px] mx-auto px-6 lg:px-10 py-10 scroll-mt-20">
         <div className="flex flex-wrap items-end justify-between gap-6 mb-8">
           <div>
             <div className="text-[10px] uppercase tracking-[0.3em] text-[#94A3B8] mb-2">Welcome back · {user?.name}</div>
@@ -72,11 +89,46 @@ export default function StudentDashboard() {
           <SkeletonBlock />
         ) : (
           <div className="space-y-6">
+            {activeAdvisories.length > 0 && (
+              <section data-testid="student-advisories" className="space-y-3">
+                <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.3em] text-[#94A3B8]">
+                  <Megaphone size={13} className="text-[#93C5FD]" />
+                  Active Advisories ({activeAdvisories.length})
+                </div>
+                <div className="space-y-2">
+                  {activeAdvisories.map((a) => {
+                    const style = ADVISORY_STYLES[a.severity] || ADVISORY_STYLES.moderate;
+                    return (
+                      <div
+                        key={a.id}
+                        data-testid={`student-advisory-${a.id}`}
+                        className="relative border border-[#1E293B] bg-[#111827] px-5 py-4 pl-6"
+                      >
+                        <div className="absolute top-0 bottom-0 left-0 w-1" style={{ backgroundColor: style.accent }} />
+                        <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+                          <div className="font-display font-semibold text-sm text-[#F8FAFC]">{a.title}</div>
+                          <div className="flex items-center gap-2">
+                            <span className={`text-[9px] font-mono uppercase tracking-wider px-2 py-0.5 border ${style.badge}`}>
+                              {style.label}
+                            </span>
+                            <span className="text-[10px] font-mono text-[#64748B]">
+                              {new Date(a.created_at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                            </span>
+                          </div>
+                        </div>
+                        <p className="text-xs text-[#94A3B8] leading-relaxed">{a.message}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
+
             <AQIBigCard station={station} reading={current} />
 
             <div className="grid lg:grid-cols-3 gap-6">
               <div className="lg:col-span-2 space-y-6">
-                <TrendChart data={history} title="24-Hour AQI Trend" dataKey="aqi" xKey="timestamp" />
+                <TrendChart data={history} title="24-hour AQI trend (rolling 24-h avg)" dataKey="aqi" xKey="timestamp" />
                 <PollutantGrid reading={current} />
               </div>
               <div className="space-y-6">

@@ -206,10 +206,14 @@ def synth_reading(station: dict, ts: datetime, seed_offset: int = 0) -> dict:
     humidity = max(20, min(95, 65 - (temp - 22) * 1.6 + rnd.uniform(-6, 6)))
     aqi, dominant = aqi_cpcb(pm25, pm10)
     rh = round(humidity, 1)
+    pm25_r = round(pm25, 1)
+    pm10_r = round(pm10, 1)
     return {
         "timestamp": ts.isoformat(),
-        "pm25": round(pm25, 1),
-        "pm10": round(pm10, 1),
+        "pm25": pm25_r,
+        "pm10": pm10_r,
+        "pm25_24h": pm25_r,
+        "pm10_24h": pm10_r,
         "co2": round(co2, 0),
         "no2": round(no2, 1),
         "so2": round(so2, 1),
@@ -226,11 +230,27 @@ def synth_reading(station: dict, ts: datetime, seed_offset: int = 0) -> dict:
 
 
 def history_24h(station: dict, now: datetime | None = None) -> list[dict]:
+    """24 hourly points with rolling 24-h CPCB AQI computed per hour."""
     now = now or datetime.now(timezone.utc)
-    return [
-        synth_reading(station, now - timedelta(hours=23 - i))
-        for i in range(24)
+    hourly_48 = [
+        synth_reading(station, now - timedelta(hours=47 - i))
+        for i in range(48)
     ]
+    out = []
+    for idx in range(24, 48):
+        window = hourly_48[max(0, idx - 23) : idx + 1]
+        mean_pm25 = sum(w["pm25"] for w in window) / len(window)
+        mean_pm10 = sum(w["pm10"] for w in window) / len(window)
+        rolling_aqi, rolling_dom = aqi_cpcb(mean_pm25, mean_pm10)
+        entry = dict(hourly_48[idx])
+        entry["spot_aqi"] = entry["aqi"]
+        entry["pm25_24h"] = round(mean_pm25, 1)
+        entry["pm10_24h"] = round(mean_pm10, 1)
+        entry["aqi"] = rolling_aqi
+        entry["dominant_pollutant"] = rolling_dom
+        entry["category"] = category_for_aqi(rolling_aqi)
+        out.append(entry)
+    return out
 
 
 def forecast_7d(station: dict, now: datetime | None = None) -> list[dict]:

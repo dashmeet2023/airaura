@@ -33,6 +33,9 @@ def _default_node_key() -> str:
     return "airaura-node-01-secret"
 
 
+IST = timezone(timedelta(hours=5, minutes=30))
+
+
 def generate_reading(
     node_id: str,
     ts: datetime,
@@ -41,10 +44,11 @@ def generate_reading(
     rng: random.Random,
     fw: str = "0.1.0",
 ) -> dict:
-    """Generate one realistic synthetic sensor reading matching §5 contract."""
-    hour = ts.hour + ts.minute / 60.0
+    """Generate one realistic Patiala winter sensor reading matching §5 contract."""
+    local_ts = ts.astimezone(IST)
+    hour = local_ts.hour + local_ts.minute / 60.0
 
-    # Bimodal diurnal PM2.5 curve (peaks ~08:30 and ~21:00), within 40-200 ug/m3.
+    # Bimodal diurnal PM2.5 curve (peaks ~08:30 and ~21:00 IST), within 40-200 ug/m3.
     morning_peak = math.exp(-((hour - 8.5) ** 2) / (2 * 2.2 ** 2))
     evening_peak = math.exp(-((hour - 21.0) ** 2) / (2 * 2.6 ** 2))
     diurnal = 0.55 * morning_peak + 0.95 * evening_peak
@@ -52,13 +56,13 @@ def generate_reading(
     pm10 = round(pm25 * rng.uniform(1.5, 1.9), 1)
     pm25 = round(pm25, 1)
 
-    # Temperature 8-25 C (coolest ~05:00, warmest ~14:30-15:00).
-    temp_wave = 0.5 * (1.0 - math.cos(2.0 * math.pi * (hour - 5.0) / 24.0))
-    temp_c = round(_clamp(9.0 + 15.0 * temp_wave + rng.uniform(-0.8, 0.8), 8.0, 25.0), 1)
+    # Patiala winter temperature: ~7 C at night (~03:00 IST) to ~22 C mid-afternoon (~15:00 IST).
+    temp_wave = 0.5 * (1.0 + math.sin(2.0 * math.pi * (hour - 9.0) / 24.0))
+    temp_c = round(_clamp(7.0 + 15.0 * temp_wave + rng.uniform(-0.6, 0.6), 6.5, 22.5), 1)
 
-    # Relative humidity 40-95%, inversely correlated with temperature.
-    rh_base = 92.0 - ((temp_c - 8.0) / 17.0) * 48.0
-    rh_pct = round(_clamp(rh_base + rng.uniform(-4.0, 4.0), 40.0, 95.0), 1)
+    # Winter relative humidity: higher at night (up to 95%), ~50% mid-afternoon.
+    rh_base = 94.5 - ((temp_c - 7.0) / 15.0) * 44.5
+    rh_pct = round(_clamp(rh_base + rng.uniform(-2.5, 3.0), 40.0, 95.0), 1)
 
     # MQ-135 Rs/R0 0.8-2.5 rising with pollution.
     pollution_norm = (pm25 - 40.0) / 160.0

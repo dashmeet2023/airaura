@@ -251,6 +251,8 @@ async def node_current_reading(
         "timestamp": _ensure_utc(latest_valid["ts"]).isoformat(),
         "pm25": round(float(latest_valid["pm25"]), 1),
         "pm10": round(float(latest_valid["pm10"]), 1),
+        "pm25_24h": round(mean_pm25, 1),
+        "pm10_24h": round(mean_pm10, 1),
         "temperature": round(float(latest_valid["temp_c"]), 1),
         "humidity": rh,
         "gas_index": round(float(latest_valid["mq135_rs_r0"]), 2),
@@ -291,35 +293,46 @@ async def resolve_station_current(
 
 
 async def resolve_station_history_24h(db: Any, station: dict) -> tuple[list[dict], bool, str]:
-    """Return 24h hourly history from readings_hourly for online nodes, else synthetic."""
+    """Return 24h hourly history from readings_hourly with 24-h rolling CPCB AQI."""
     node = await get_node_for_station(db, station["id"])
     now = datetime.now(timezone.utc)
     if node is not None and is_node_online(node, now):
+        since_48h = now - timedelta(hours=48)
         since_24h = now - timedelta(hours=24)
         docs = await (
             db.readings_hourly.find(
-                {"node_id": node["node_id"], "hour": {"$gte": since_24h}},
+                {"node_id": node["node_id"], "hour": {"$gte": since_48h}},
                 {"_id": 0},
             )
             .sort("hour", 1)
-            .to_list(48)
+            .to_list(60)
         )
         if docs:
+            hourly_utc = [(_ensure_utc(d["hour"]), d) for d in docs]
+            recent = [(h, d) for h, d in hourly_utc if h >= since_24h][-24:]
+            if not recent:
+                recent = hourly_utc[-24:]
             items = []
-            for d in docs[-24:]:
-                pm25 = round(float(d["pm25"]), 1)
-                pm10 = round(float(d["pm10"]), 1)
-                aqi, dominant = aqi_cpcb(pm25, pm10)
+            for h_dt, d in recent:
+                win_start = h_dt - timedelta(hours=23)
+                window = [w for wh, w in hourly_utc if win_start <= wh <= h_dt] or [d]
+                weights = [max(1, int(w.get("count", 1))) for w in window]
+                total_w = sum(weights)
+                mean_pm25 = sum(float(w["pm25"]) * wt for w, wt in zip(window, weights)) / total_w
+                mean_pm10 = sum(float(w["pm10"]) * wt for w, wt in zip(window, weights)) / total_w
+                rolling_aqi, dominant = aqi_cpcb(mean_pm25, mean_pm10)
                 items.append({
-                    "timestamp": _ensure_utc(d["hour"]).isoformat(),
-                    "pm25": pm25,
-                    "pm10": pm10,
+                    "timestamp": h_dt.isoformat(),
+                    "pm25": round(float(d["pm25"]), 1),
+                    "pm10": round(float(d["pm10"]), 1),
+                    "pm25_24h": round(mean_pm25, 1),
+                    "pm10_24h": round(mean_pm10, 1),
                     "temperature": round(float(d["temp_c"]), 1),
                     "humidity": round(float(d["rh_pct"]), 1),
                     "gas_index": round(float(d["mq135_rs_r0"]), 2),
-                    "aqi": aqi,
+                    "aqi": rolling_aqi,
                     "dominant_pollutant": dominant,
-                    "category": category_for_aqi(aqi),
+                    "category": category_for_aqi(rolling_aqi),
                     "count": int(d.get("count", 0)),
                     "simulated": False,
                     "source": "airaura-node",

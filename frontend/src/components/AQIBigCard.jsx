@@ -67,8 +67,13 @@ export default function AQIBigCard({ station, reading }) {
               <div className="font-display font-bold text-7xl lg:text-8xl tracking-tighter leading-none" style={{ color: cat.color }} data-testid="aqi-value">
                 {reading.aqi}
               </div>
-              <div className="text-xs font-mono uppercase tracking-[0.2em] text-[#64748B] mt-2">
-                CPCB AQI{reading.dominant_pollutant ? ` · ${reading.dominant_pollutant}` : ""}
+              <div className="text-xs font-mono uppercase tracking-[0.2em] text-[#64748B] mt-2" data-testid="aqi-method-label">
+                CPCB AQI · 24-h avg{reading.dominant_pollutant ? ` · ${reading.dominant_pollutant}` : ""}
+              </div>
+              <div className="text-[11px] font-mono text-[#94A3B8] mt-1" data-testid="aqi-24h-inputs">
+                {reading.simulated
+                  ? `Current baseline: PM2.5 ${reading.pm25_24h ?? reading.pm25} · PM10 ${reading.pm10_24h ?? reading.pm10} µg/m³`
+                  : `24-h avg: PM2.5 ${reading.pm25_24h ?? reading.pm25} · PM10 ${reading.pm10_24h ?? reading.pm10} µg/m³`}
               </div>
             </div>
             <div className="pb-3">
@@ -83,8 +88,8 @@ export default function AQIBigCard({ station, reading }) {
         </div>
 
         <div className="grid grid-cols-2 gap-px bg-[#1E293B] border border-[#1E293B]">
-          <MetricTile icon={CloudFog} label="PM2.5" value={reading.pm25} unit="µg/m³" />
-          <MetricTile icon={Wind} label="PM10" value={reading.pm10} unit="µg/m³" />
+          <MetricTile icon={CloudFog} label="PM2.5" value={reading.pm25} unit="µg/m³" tag="Latest reading" />
+          <MetricTile icon={Wind} label="PM10" value={reading.pm10} unit="µg/m³" tag="Latest reading" />
           <MetricTile icon={Thermometer} label="Temp" value={reading.temperature} unit="°C" />
           <MetricTile icon={Drop} label="Humidity" value={reading.humidity} unit="%" />
         </div>
@@ -93,11 +98,14 @@ export default function AQIBigCard({ station, reading }) {
   );
 }
 
-function MetricTile({ icon: Icon, label, value, unit }) {
+function MetricTile({ icon: Icon, label, value, unit, tag }) {
   return (
     <div className="bg-[#0B1120] p-4 flex flex-col gap-2" data-testid={`metric-${label.toLowerCase()}`}>
-      <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.2em] text-[#64748B]">
-        <Icon size={12} /> {label}
+      <div className="flex items-center justify-between gap-2 text-[10px] uppercase tracking-[0.2em] text-[#64748B]">
+        <span className="flex items-center gap-1.5">
+          <Icon size={12} /> {label}
+        </span>
+        {tag && <span className="text-[9px] font-mono tracking-wider text-[#94A3B8]">{tag}</span>}
       </div>
       <div className="font-display font-bold text-2xl">{value}</div>
       <div className="text-[10px] font-mono text-[#64748B]">{unit}</div>
