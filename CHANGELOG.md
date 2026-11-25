@@ -74,6 +74,12 @@
 - **Firmware & Simulator (`firmware/airaura_node/`, `tools/fake_node.py`, `.gitignore`):**
   - Updated `tools/fake_node.py` to v0.2.0 payload (`boot_id`, `fw: "fake-0.2.0"`), set `SERVER_URL` (`http://10.33.242.229:8000`) in `firmware/airaura_node/config.h`, and added `firmware/airaura_node/config.h` to `.gitignore`.
 
+### Firmware v0.2.1 Crash Fix
+- **Firmware (`firmware/airaura_node/airaura_node.ino`, `firmware/airaura_node/config.example.h`):**
+  - Fixed the v0.2.0 per-minute reboot caused by an lwIP `assert failed: pbuf_free` crash on stack-allocated `WiFiClient`/`WiFiClientSecure` instances during HTTP POST (not a USB power brownout).
+  - Bumped `FW_VERSION` to `"0.2.1"`, moved `plainClient` and `secureClient` to globals, set `http.setReuse(false)`, `http.setConnectTimeout(5000)`, explicit `.stop()` after `http.end()`, `WiFi.setSleep(false)` in `setup()`, and defaulted `ENABLE_LOCAL_PAGE` to `false` in `config.example.h`.
+
+
 
 
 

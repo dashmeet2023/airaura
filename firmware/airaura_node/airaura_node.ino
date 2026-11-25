@@ -1,5 +1,5 @@
 /*
-  AirAura Node firmware v0.2.0
+  AirAura Node firmware v0.2.1
   ESP32 + PMS5003 (UART2) + DHT11/DHT22 + MQ-2/MQ-135 module (digital DO, optional analog AO)
 
   Every 60 s: median of all samples collected in that minute -> JSON POST to
@@ -26,13 +26,19 @@
 #error "Copy config.example.h to config.h and fill in your WiFi + server details"
 #endif
 
-#define FW_VERSION "0.2.0"
+#define FW_VERSION "0.2.1"
 #define MAX_SAMPLES 150
 #define BUFFER_FILE "/buffer.jsonl"
 #define BUFFER_MAX_LINES 500
 
+#ifndef ENABLE_LOCAL_PAGE
+#define ENABLE_LOCAL_PAGE false
+#endif
+
 DHT dht(DHT_PIN, DHT_TYPE);
 WebServer server(80);
+WiFiClient plainClient;
+WiFiClientSecure secureClient;
 
 // ---------- sample buffers for the current minute ----------
 uint16_t pm1S[MAX_SAMPLES], pm25S[MAX_SAMPLES], pm10S[MAX_SAMPLES];
@@ -155,21 +161,24 @@ int postJson(const String& body) {
   if (WiFi.status() != WL_CONNECTED) return -1;
   String url = String(SERVER_URL) + "/api/ingest";
   HTTPClient http;
-  WiFiClientSecure secure;
-  WiFiClient plain;
+  bool isHttps = url.startsWith("https");
   bool ok;
-  if (url.startsWith("https")) {
-    secure.setInsecure();  // TODO: pin the server's root CA for production
-    ok = http.begin(secure, url);
+  if (isHttps) {
+    secureClient.setInsecure();  // TODO: pin the server's root CA for production
+    ok = http.begin(secureClient, url);
   } else {
-    ok = http.begin(plain, url);
+    ok = http.begin(plainClient, url);
   }
   if (!ok) return -1;
+  http.setReuse(false);
+  http.setConnectTimeout(5000);
   http.setTimeout(10000);
   http.addHeader("Content-Type", "application/json");
   http.addHeader("X-Node-Key", NODE_KEY);
   int code = http.POST(body);
   http.end();
+  if (isHttps) secureClient.stop();
+  else plainClient.stop();
   return code;
 }
 
@@ -317,6 +326,7 @@ void setup() {
   bootId = esp_random();
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(true);
+  WiFi.setSleep(false);
   ensureWifi();
   configTime(0, 0, "pool.ntp.org", "time.google.com");
 
