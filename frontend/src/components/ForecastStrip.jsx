@@ -3,9 +3,14 @@ import { categoryForAqi } from "../lib/aqi";
 export default function ForecastStrip({ forecast }) {
   return (
     <div data-testid="forecast-strip" className="border border-[#1E293B] bg-[#111827] p-6">
-      <div className="flex items-baseline justify-between mb-5">
+      <div className="flex flex-wrap items-baseline justify-between gap-2 mb-5">
         <div className="text-[10px] uppercase tracking-[0.3em] text-[#94A3B8]">7-Day AQI Forecast</div>
-        <div className="text-xs font-mono text-[#64748B]">ML trend model</div>
+        <div
+          data-testid="forecast-simulated-label"
+          className="text-[10px] font-mono text-amber-300/90 border border-amber-500/30 bg-amber-500/10 px-2 py-0.5"
+        >
+          Simulated forecast — model in development
+        </div>
       </div>
       <div className="grid grid-cols-7 gap-px bg-[#1E293B] border border-[#1E293B]">
         {forecast.map((d, i) => {

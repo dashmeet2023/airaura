@@ -22,8 +22,6 @@ from pydantic import BaseModel, EmailStr, Field
 
 from aqi_data import (
     STATIONS,
-    current_reading,
-    history_24h,
     daily_history,
     forecast_7d,
     health_tips_for,
@@ -34,6 +32,12 @@ from ingest import (
     aggregation_loop,
     create_ingest_router,
     ensure_ingest_indexes,
+    get_node_for_station,
+    get_nodes_by_station,
+    is_node_online,
+    resolve_station_current,
+    resolve_station_daily,
+    resolve_station_history_24h,
     seed_default_node,
 )
 
@@ -179,32 +183,56 @@ async def me(user: dict = Depends(get_current_user)):
 
 
 # ---------- Station / AQI Routes ----------
+def _station_meta(s: dict, reading: dict, fields: tuple[str, ...]) -> dict:
+    return {
+        **{k: s[k] for k in fields},
+        "simulated": reading["simulated"],
+        "source": reading["source"],
+        "node_status": reading.get("node_status"),
+        "current": reading,
+    }
+
+
 @api.get("/stations")
 async def list_stations():
-    """Return all stations with current readings."""
-    out = []
-    for s in STATIONS:
-        r = current_reading(s)
-        out.append({
-            **{k: s[k] for k in ("id", "name", "city", "state", "lat", "lng", "type")},
-            "current": r,
-        })
-    return {"stations": out}
+    """Return all stations with current readings (live node or synthetic fallback)."""
+    nodes_map = await get_nodes_by_station(db)
+    readings = await asyncio.gather(*(
+        resolve_station_current(db, s, nodes_map.get(s["id"]), _node_checked=True)
+        for s in STATIONS
+    ))
+    fields = ("id", "name", "city", "state", "lat", "lng", "type")
+    out = [_station_meta(s, r, fields) for s, r in zip(STATIONS, readings)]
+    all_sim = all(item["simulated"] for item in out)
+    return {
+        "stations": out,
+        "simulated": all_sim,
+        "source": "simulated" if all_sim else "mixed",
+    }
 
 
 @api.get("/stations/search")
 async def search_stations(q: str = ""):
     q = (q or "").lower().strip()
     if not q:
-        return {"results": []}
+        return {"results": [], "simulated": True, "source": "simulated"}
     matches = [
         s for s in STATIONS
         if q in s["name"].lower() or q in s["city"].lower() or q in s["state"].lower()
-    ]
-    return {"results": [
-        {**{k: s[k] for k in ("id", "name", "city", "state", "type")}, "current": current_reading(s)}
-        for s in matches[:10]
-    ]}
+    ][:10]
+    nodes_map = await get_nodes_by_station(db)
+    readings = await asyncio.gather(*(
+        resolve_station_current(db, s, nodes_map.get(s["id"]), _node_checked=True)
+        for s in matches
+    ))
+    fields = ("id", "name", "city", "state", "type")
+    out = [_station_meta(s, r, fields) for s, r in zip(matches, readings)]
+    all_sim = all(item["simulated"] for item in out) if out else True
+    return {
+        "results": out,
+        "simulated": all_sim,
+        "source": "simulated" if all_sim else "mixed",
+    }
 
 
 def _find_station(station_id: str) -> dict:
@@ -217,57 +245,99 @@ def _find_station(station_id: str) -> dict:
 @api.get("/stations/{station_id}")
 async def get_station(station_id: str):
     s = _find_station(station_id)
-    reading = current_reading(s)
+    reading = await resolve_station_current(db, s)
     return {
         "station": {k: s[k] for k in ("id", "name", "city", "state", "lat", "lng", "type")},
         "current": reading,
         "health_tips": health_tips_for(reading["category"]["code"]),
+        "simulated": reading["simulated"],
+        "source": reading["source"],
+        "node_status": reading.get("node_status"),
     }
 
 
 @api.get("/stations/{station_id}/history")
 async def get_history(station_id: str):
     s = _find_station(station_id)
-    return {"history": history_24h(s)}
+    history, simulated, source = await resolve_station_history_24h(db, s)
+    return {"history": history, "simulated": simulated, "source": source}
 
 
 @api.get("/stations/{station_id}/forecast")
 async def get_forecast(station_id: str):
     s = _find_station(station_id)
-    return {"forecast": forecast_7d(s)}
+    return {
+        "forecast": forecast_7d(s),
+        "simulated": True,
+        "source": "simulated",
+        "note": "Placeholder until forecast model is trained",
+    }
 
 
 @api.get("/stations/{station_id}/predict")
 async def predict_station_aqi(station_id: str):
-    """ML nowcast (Track A XGBoost model) — independent of the current_reading
-    formula above. Uses recent synthetic daily history to build the same
-    lag/rolling features the model was trained on."""
+    """ML nowcast (Track A XGBoost model). Uses real readings_daily for online
+    node stations (returning warming_up when <8 days exist), or falls back to
+    synthetic daily history when simulated or offline."""
     s = _find_station(station_id)
-    daily = daily_history(s, days=10)
-    result = predict_aqi(daily)
+    node = await get_node_for_station(db, station_id)
+
+    if node is not None and is_node_online(node):
+        daily = await resolve_station_daily(db, node, limit=14)
+        if len(daily) < 8:
+            return {
+                "station_id": station_id,
+                "status": "warming_up",
+                "days_available": len(daily),
+                "days_needed": 8,
+                "simulated": False,
+                "source": "airaura-node",
+            }
+        target_date = datetime.strptime(daily[-1]["date"], "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        result = predict_aqi(daily, target_date=target_date)
+        simulated = False
+        source = "airaura-node"
+        extra = {}
+    else:
+        daily = daily_history(s, days=10)
+        result = predict_aqi(daily)
+        simulated = True
+        source = "simulated"
+        extra = {"node_status": "offline"} if node is not None else {}
+
     if result is None:
-        status = model_status()
+        status_info = model_status()
         detail = (
             "ML prediction model not deployed yet. Export it from the notebook "
             "and drop it at backend/ml/model/aqi_track_a_xgb.pkl (see backend/ml/README.md)."
-            if not status["loaded"] else "Not enough station history to predict yet."
+            if not status_info["loaded"] else "Not enough station history to predict yet."
         )
         raise HTTPException(status_code=503, detail=detail)
+
     aqi = result["predicted_aqi"]
     feats = result["features_used"]
     return {
         "station_id": station_id,
+        "status": "ok",
         "predicted_aqi": aqi,
         "category": category_for_aqi(aqi),
         "model": "xgboost_track_a_v1",
-        "inputs": {"pm25": feats["PM2.5"], "pm10": feats["PM10"]},
+        "inputs": {"pm25": round(feats["PM2.5"], 1), "pm10": round(feats["PM10"], 1)},
         "based_on_days": len(daily),
+        "simulated": simulated,
+        "source": source,
+        **extra,
     }
 
 
 # ---------- PCB Overview ----------
 @api.get("/overview")
 async def overview(user: dict = Depends(require_role("pcb_official"))):
+    nodes_map = await get_nodes_by_station(db)
+    current_list = await asyncio.gather(*(
+        resolve_station_current(db, s, nodes_map.get(s["id"]), _node_checked=True)
+        for s in STATIONS
+    ))
     readings = []
     buckets = {
         "good": 0,
@@ -277,17 +347,15 @@ async def overview(user: dict = Depends(require_role("pcb_official"))):
         "very_poor": 0,
         "severe": 0,
     }
-    for s in STATIONS:
-        r = current_reading(s)
+    fields = ("id", "name", "city", "state", "lat", "lng", "type")
+    for s, r in zip(STATIONS, current_list):
         buckets[r["category"]["code"]] += 1
-        readings.append({
-            **{k: s[k] for k in ("id", "name", "city", "state", "lat", "lng", "type")},
-            "current": r,
-        })
+        readings.append(_station_meta(s, r, fields))
     readings.sort(key=lambda x: x["current"]["aqi"], reverse=True)
     worst = readings[:3]
     best = sorted(readings, key=lambda x: x["current"]["aqi"])[:3]
     avg = round(sum(r["current"]["aqi"] for r in readings) / len(readings)) if readings else 0
+    all_sim = all(item["simulated"] for item in readings)
     return {
         "summary": {
             "total_stations": len(readings),
@@ -298,6 +366,8 @@ async def overview(user: dict = Depends(require_role("pcb_official"))):
         "hotspots": worst,
         "cleanest": best,
         "stations": readings,
+        "simulated": all_sim,
+        "source": "simulated" if all_sim else "mixed",
     }
 
 

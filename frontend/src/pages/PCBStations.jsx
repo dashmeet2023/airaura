@@ -63,7 +63,22 @@ export default function PCBStations() {
                 className="w-full grid grid-cols-12 gap-4 px-5 py-4 border-b border-[#1E293B] last:border-b-0 hover:bg-[#1E293B]/50 transition-colors text-left items-center"
               >
                 <div className="col-span-1 font-mono text-[10px] text-[#64748B]">{String(i + 1).padStart(2, "0")}</div>
-                <div className="col-span-3 font-display font-semibold truncate">{s.name}</div>
+                <div className="col-span-3 flex items-center gap-2 min-w-0">
+                  <span className="font-display font-semibold truncate">{s.name}</span>
+                  {s.current?.simulated === false ? (
+                    <span className="text-[9px] font-mono uppercase tracking-wider px-1.5 py-0.5 border border-emerald-500/40 bg-emerald-500/10 text-emerald-300 shrink-0">
+                      Live
+                    </span>
+                  ) : s.current?.node_status === "offline" ? (
+                    <span className="text-[9px] font-mono uppercase tracking-wider px-1.5 py-0.5 border border-slate-600/60 bg-slate-800/70 text-slate-300 shrink-0">
+                      Offline
+                    </span>
+                  ) : (
+                    <span className="text-[9px] font-mono uppercase tracking-wider px-1.5 py-0.5 border border-[#334155] text-[#64748B] shrink-0">
+                      Simulated
+                    </span>
+                  )}
+                </div>
                 <div className="col-span-2 text-xs text-[#94A3B8] truncate">{s.city}</div>
                 <div className="col-span-1 text-[10px] uppercase tracking-widest text-[#64748B]">{s.type}</div>
                 <div className="col-span-1 text-right font-display font-bold text-xl" style={{ color: c.color }}>{s.current.aqi}</div>

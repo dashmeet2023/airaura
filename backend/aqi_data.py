@@ -205,6 +205,7 @@ def synth_reading(station: dict, ts: datetime, seed_offset: int = 0) -> dict:
     temp = 18 + 9 * math.sin((ts.hour - 9) / 12 * math.pi) + rnd.uniform(-1.5, 1.5)
     humidity = max(20, min(95, 65 - (temp - 22) * 1.6 + rnd.uniform(-6, 6)))
     aqi, dominant = aqi_cpcb(pm25, pm10)
+    rh = round(humidity, 1)
     return {
         "timestamp": ts.isoformat(),
         "pm25": round(pm25, 1),
@@ -214,10 +215,13 @@ def synth_reading(station: dict, ts: datetime, seed_offset: int = 0) -> dict:
         "so2": round(so2, 1),
         "o3": round(o3, 1),
         "temperature": round(temp, 1),
-        "humidity": round(humidity, 1),
+        "humidity": rh,
         "aqi": aqi,
         "dominant_pollutant": dominant,
         "category": category_for_aqi(aqi),
+        "rh_warning": rh > 75.0,
+        "simulated": True,
+        "source": "simulated",
     }
 
 
@@ -248,6 +252,8 @@ def forecast_7d(station: dict, now: datetime | None = None) -> list[dict]:
             "pm10": r["pm10"],
             "dominant_pollutant": r["dominant_pollutant"],
             "category": r["category"],
+            "simulated": True,
+            "source": "simulated",
         })
     return out
 

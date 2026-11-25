@@ -31,3 +31,18 @@
   - Added standalone simulator (`requests` + stdlib) supporting live mode (configurable `--interval`, incremental `seq`, diurnal PM2.5/PM10/temp/RH/MQ-135 curves, `warmup=true` for first 3 readings) and `--backfill N` mode (10-minute historical spacing followed by admin login and `POST /api/admin/aggregate`).
   - Documented usage, CLI flags, and examples in `tools/README.md`.
 
+### Task 5 — Real Node Data in Backend API
+- **Backend (`backend/ingest.py`, `backend/server.py`, `backend/aqi_data.py`):**
+  - Added `get_node_for_station()`, `get_nodes_by_station()`, `is_node_online()`, `node_current_reading()`, `resolve_station_current()`, `resolve_station_history_24h()`, and `resolve_station_daily()`.
+  - Updated station endpoints (`/stations`, `/stations/search`, `/stations/{station_id}`, `/stations/{station_id}/history`, `/stations/{station_id}/predict`, `/overview`) to async Motor lookups: stations with online hardware nodes (`thapar-campus` → `airaura-01`) return live non-warmup telemetry (`gas_index`, `rh_warning`, `simulated: false`, `source: "airaura-node"`, `node_status`), 24h rolling CPCB AQI, hourly `readings_hourly` history, and `readings_daily` ML predictions (returning `200 {"status": "warming_up", "days_available": n, "days_needed": 8}` when `< 8` days exist), automatically falling back to synthetic data (`simulated: true`) when offline or without data.
+  - Marked all synthetic responses with `simulated: true`, `source: "simulated"`, and added `"simulated": true` + `"note": "Placeholder until forecast model is trained"` to `/forecast`.
+
+### Task 6 — Hardware-Matched Dashboard UI
+- **Frontend (`PollutantGrid.jsx`, `AQIBigCard.jsx`, `MLPredictionCard.jsx`, `ForecastStrip.jsx`, `PCBDashboard.jsx`, `PCBStations.jsx`):**
+  - Updated `PollutantGrid.jsx` to show `PM 2.5`, `PM 10`, `MQ-135 gas index` (`Rs/R0`, `uncalibrated`), `Temperature`, and `Humidity` for live node stations (removing fake `NO₂`/`SO₂`/`O₃`/`CO₂`), while tagging simulated stations as `simulated`.
+  - Added node status chip (`Live sensor`, `Warming up`, `Offline`, or `Simulated data`) and yellow `High humidity — PM may read high` badge (`rh_warning`) on `AQIBigCard.jsx`.
+  - Updated `MLPredictionCard.jsx` to render `Collecting data: n/8 days` with a progress bar on `warming_up` and updated the model note to reference daily PM2.5/PM10 sensor averages.
+  - Added `Simulated forecast — model in development` badge to `ForecastStrip.jsx` and live/simulated sensor badges on `PCBDashboard.jsx` and `PCBStations.jsx`.
+  - Added browser verification screenshots in `docs/screenshots/`.
+
+

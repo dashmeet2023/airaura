@@ -1,15 +1,64 @@
 import { categoryForAqi } from "../lib/aqi";
-import { Drop, Thermometer, CloudFog, Wind } from "@phosphor-icons/react";
+import { Drop, Thermometer, CloudFog, Wind, Warning } from "@phosphor-icons/react";
+
+function getNodeChipMeta(reading) {
+  if (reading?.simulated === false && reading?.node_status === "warming_up") {
+    return {
+      label: "Warming up",
+      cls: "border-amber-500/40 bg-amber-500/10 text-amber-300",
+      dot: "bg-amber-400 animate-pulse",
+    };
+  }
+  if (reading?.simulated === false) {
+    return {
+      label: "Live sensor",
+      cls: "border-emerald-500/40 bg-emerald-500/10 text-emerald-300",
+      dot: "bg-emerald-400 animate-pulse",
+    };
+  }
+  if (reading?.node_status === "offline") {
+    return {
+      label: "Offline",
+      cls: "border-slate-600/60 bg-slate-800/70 text-slate-300",
+      dot: "bg-slate-400",
+    };
+  }
+  return {
+    label: "Simulated data",
+    cls: "border-[#334155] bg-[#0B1120] text-[#94A3B8]",
+    dot: "bg-[#64748B]",
+  };
+}
 
 export default function AQIBigCard({ station, reading }) {
   const cat = categoryForAqi(reading.aqi);
+  const chip = getNodeChipMeta(reading);
+
   return (
     <div data-testid="aqi-big-card" className="relative border border-[#1E293B] bg-[#111827] overflow-hidden">
       <div className={`absolute inset-0 ${cat.bg} pointer-events-none`} />
       <div className="absolute top-0 left-0 right-0 h-1" style={{ backgroundColor: cat.color }} />
       <div className="relative p-8 lg:p-10 grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2">
-          <div className="text-[10px] tracking-[0.3em] uppercase text-[#94A3B8] mb-2">Live AQI Reading</div>
+          <div className="flex flex-wrap items-center gap-2 mb-2">
+            <div className="text-[10px] tracking-[0.3em] uppercase text-[#94A3B8]">Live AQI Reading</div>
+            <span
+              data-testid="node-status-chip"
+              className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 border text-[10px] font-mono uppercase tracking-wider ${chip.cls}`}
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${chip.dot}`} />
+              {chip.label}
+            </span>
+            {reading.rh_warning && (
+              <span
+                data-testid="rh-warning-badge"
+                className="inline-flex items-center gap-1.5 px-2.5 py-0.5 border border-yellow-500/50 bg-yellow-500/15 text-yellow-300 text-[10px] font-mono tracking-wider"
+              >
+                <Warning size={12} weight="fill" />
+                High humidity — PM may read high
+              </span>
+            )}
+          </div>
           <h2 className="font-display text-2xl font-bold tracking-tight" data-testid="station-name">{station.name}</h2>
           <div className="text-xs font-mono text-[#64748B] mt-1">{station.city} · {station.state} · {station.lat?.toFixed(3)}, {station.lng?.toFixed(3)}</div>
 

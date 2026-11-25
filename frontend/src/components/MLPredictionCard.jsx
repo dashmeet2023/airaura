@@ -48,7 +48,34 @@ export default function MLPredictionCard({ stationId, currentAqi }) {
     );
   }
 
-  const { predicted_aqi, category, model, inputs } = state.data;
+  if (state.data.status === "warming_up") {
+    const daysAvail = state.data.days_available ?? 0;
+    const daysNeeded = state.data.days_needed ?? 8;
+    const pct = Math.min(100, Math.max(0, (daysAvail / daysNeeded) * 100));
+    return (
+      <div className="border border-[#1E293B] bg-[#111827] p-6" data-testid="ml-prediction-card">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.3em] text-[#94A3B8]">
+            <Brain size={14} /> ML Model Prediction
+          </div>
+          <span className="text-[9px] font-mono uppercase tracking-wider px-2 py-0.5 border border-amber-500/40 bg-amber-500/10 text-amber-300">
+            Warming up
+          </span>
+        </div>
+        <div data-testid="ml-warming-up" className="font-display font-semibold text-base text-[#E2E8F0] mb-3">
+          Collecting data: {daysAvail}/{daysNeeded} days
+        </div>
+        <div className="h-1.5 bg-[#1E293B] mb-3">
+          <div className="h-full bg-amber-400 transition-all duration-500" style={{ width: `${pct}%` }} />
+        </div>
+        <p className="text-[10px] text-[#64748B] leading-relaxed">
+          Uses PM2.5/PM10 daily averages from the sensor. At least {daysNeeded} days are needed to compute 7-day lag and rolling features.
+        </p>
+      </div>
+    );
+  }
+
+  const { predicted_aqi, category, model, inputs, simulated } = state.data;
   const cat = categoryForAqi(predicted_aqi);
   const delta = typeof currentAqi === "number" ? predicted_aqi - currentAqi : null;
   const DeltaIcon = delta == null || delta === 0 ? Minus : delta > 0 ? TrendUp : TrendDown;
@@ -99,8 +126,8 @@ export default function MLPredictionCard({ stationId, currentAqi }) {
       )}
 
       <p className="text-[10px] text-[#64748B] mt-4 leading-relaxed">
-        XGBoost trained on nationwide sensor history — predicts AQI from PM2.5 and PM10 only (plus their
-        recent trend). No other pollutants are used as inputs.
+        XGBoost trained on CPCB station history — uses PM2.5/PM10 daily averages from the sensor (plus their 7-day trend).
+        {simulated ? " Currently using simulated daily baseline." : ""}
       </p>
     </div>
   );

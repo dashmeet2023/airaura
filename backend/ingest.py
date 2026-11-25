@@ -12,7 +12,13 @@ from pydantic import BaseModel, Field
 from pymongo import UpdateOne
 from pymongo.errors import DuplicateKeyError
 
-from aqi_data import STATIONS
+from aqi_data import (
+    STATIONS,
+    aqi_cpcb,
+    category_for_aqi,
+    current_reading as synth_current_reading,
+    history_24h as synth_history_24h,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -160,6 +166,186 @@ async def aggregate_readings(db: Any) -> dict[str, int]:
         now,
     )
     return {"hourly_buckets": hourly_count, "daily_buckets": daily_count}
+
+
+async def get_node_for_station(db: Any, station_id: str) -> Optional[dict]:
+    """Return the registered hardware node document for a station, or None."""
+    return await db.nodes.find_one({"station_id": station_id}, {"_id": 0, "key_hash": 0})
+
+
+async def get_nodes_by_station(db: Any) -> dict[str, dict]:
+    """Return a station_id -> node mapping across all registered nodes."""
+    docs = await db.nodes.find({}, {"_id": 0, "key_hash": 0}).to_list(100)
+    return {doc["station_id"]: doc for doc in docs if doc.get("station_id")}
+
+
+def is_node_online(node: Optional[dict], now: Optional[datetime] = None) -> bool:
+    if not node:
+        return False
+    now = now or datetime.now(timezone.utc)
+    last_seen = _ensure_utc(node.get("last_seen"))
+    return bool(last_seen is not None and (now - last_seen) < ONLINE_WINDOW)
+
+
+async def node_current_reading(
+    db: Any,
+    node: dict,
+    now: Optional[datetime] = None,
+) -> Optional[dict]:
+    """Build current reading for an online node using 24h rolling CPCB AQI."""
+    now = now or datetime.now(timezone.utc)
+    if not is_node_online(node, now):
+        return None
+
+    node_id = node["node_id"]
+    latest_any = await db.readings_raw.find_one(
+        {"node_id": node_id},
+        {"_id": 0},
+        sort=[("ts", -1), ("seq", -1)],
+    )
+    if latest_any is None:
+        return None
+
+    if latest_any.get("warmup"):
+        latest_valid = await db.readings_raw.find_one(
+            {"node_id": node_id, "warmup": {"$ne": True}},
+            {"_id": 0},
+            sort=[("ts", -1), ("seq", -1)],
+        )
+        if latest_valid is None:
+            return None
+        node_status = "warming_up"
+    else:
+        latest_valid = latest_any
+        node_status = "online"
+
+    since_24h = now - timedelta(hours=24)
+    agg_cursor = db.readings_raw.aggregate([
+        {
+            "$match": {
+                "node_id": node_id,
+                "warmup": {"$ne": True},
+                "ts": {"$gte": since_24h},
+            }
+        },
+        {
+            "$group": {
+                "_id": None,
+                "pm25": {"$avg": "$pm25"},
+                "pm10": {"$avg": "$pm10"},
+                "count": {"$sum": 1},
+            }
+        },
+    ])
+    agg_rows = await agg_cursor.to_list(1)
+    if agg_rows and agg_rows[0].get("count", 0) > 0:
+        mean_pm25 = float(agg_rows[0]["pm25"])
+        mean_pm10 = float(agg_rows[0]["pm10"])
+    else:
+        mean_pm25 = float(latest_valid["pm25"])
+        mean_pm10 = float(latest_valid["pm10"])
+
+    aqi, dominant = aqi_cpcb(mean_pm25, mean_pm10)
+    rh = round(float(latest_valid["rh_pct"]), 1)
+    return {
+        "timestamp": _ensure_utc(latest_valid["ts"]).isoformat(),
+        "pm25": round(float(latest_valid["pm25"]), 1),
+        "pm10": round(float(latest_valid["pm10"]), 1),
+        "temperature": round(float(latest_valid["temp_c"]), 1),
+        "humidity": rh,
+        "gas_index": round(float(latest_valid["mq135_rs_r0"]), 2),
+        "aqi": aqi,
+        "dominant_pollutant": dominant,
+        "category": category_for_aqi(aqi),
+        "rh_warning": rh > 75.0,
+        "simulated": False,
+        "source": "airaura-node",
+        "node_status": node_status,
+        "node_id": node_id,
+    }
+
+
+async def resolve_station_current(
+    db: Any,
+    station: dict,
+    node: Optional[dict] = None,
+    _node_checked: bool = False,
+) -> dict:
+    """Return live node reading when online and valid, otherwise synthetic fallback."""
+    if not _node_checked:
+        node = await get_node_for_station(db, station["id"])
+
+    if node is None:
+        reading = synth_current_reading(station)
+        reading["node_status"] = None
+        return reading
+
+    live = await node_current_reading(db, node)
+    if live is not None:
+        return live
+
+    reading = synth_current_reading(station)
+    reading["node_status"] = "warming_up" if is_node_online(node) else "offline"
+    reading["node_id"] = node["node_id"]
+    return reading
+
+
+async def resolve_station_history_24h(db: Any, station: dict) -> tuple[list[dict], bool, str]:
+    """Return 24h hourly history from readings_hourly for online nodes, else synthetic."""
+    node = await get_node_for_station(db, station["id"])
+    now = datetime.now(timezone.utc)
+    if node is not None and is_node_online(node, now):
+        since_24h = now - timedelta(hours=24)
+        docs = await (
+            db.readings_hourly.find(
+                {"node_id": node["node_id"], "hour": {"$gte": since_24h}},
+                {"_id": 0},
+            )
+            .sort("hour", 1)
+            .to_list(48)
+        )
+        if docs:
+            items = []
+            for d in docs[-24:]:
+                pm25 = round(float(d["pm25"]), 1)
+                pm10 = round(float(d["pm10"]), 1)
+                aqi, dominant = aqi_cpcb(pm25, pm10)
+                items.append({
+                    "timestamp": _ensure_utc(d["hour"]).isoformat(),
+                    "pm25": pm25,
+                    "pm10": pm10,
+                    "temperature": round(float(d["temp_c"]), 1),
+                    "humidity": round(float(d["rh_pct"]), 1),
+                    "gas_index": round(float(d["mq135_rs_r0"]), 2),
+                    "aqi": aqi,
+                    "dominant_pollutant": dominant,
+                    "category": category_for_aqi(aqi),
+                    "count": int(d.get("count", 0)),
+                    "simulated": False,
+                    "source": "airaura-node",
+                })
+            return items, False, "airaura-node"
+
+    return synth_history_24h(station, now=now), True, "simulated"
+
+
+async def resolve_station_daily(db: Any, node: dict, limit: int = 14) -> list[dict]:
+    """Return oldest-first daily mean rows from readings_daily for ML feature building."""
+    docs = await (
+        db.readings_daily.find({"node_id": node["node_id"]}, {"_id": 0})
+        .sort("date", 1)
+        .to_list(365)
+    )
+    rows = [
+        {
+            "date": d["date"],
+            "pm25": float(d["pm25"]),
+            "pm10": float(d["pm10"]),
+            "count": int(d.get("count", 0)),
+        }
+        for d in docs
+    ]
+    return rows[-limit:] if limit > 0 else rows
 
 
 async def aggregation_loop(db: Any, interval_seconds: int = AGGREGATION_INTERVAL_SECONDS) -> None:
