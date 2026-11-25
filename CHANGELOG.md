@@ -89,6 +89,16 @@
   - Added an inline two-step `Delete` -> `Confirm delete` / `Cancel` control on each advisory card in `PCBAdvisories.jsx`, an optional `Expires at (optional · default 48 h)` composer input, and `"Expired"` / expiry timestamp indicators on cards.
   - Added client-side expiry filtering in `StudentDashboard.jsx` so expired advisories are excluded from the active advisory banner.
 
+### Production Deployment Config
+- **Backend (`backend/requirements.txt`, `backend/requirements-dev.txt`, `backend/.python-version`, `backend/.env.example`, `backend/server.py`, `render.yaml`):**
+  - Trimmed `backend/requirements.txt` to runtime-only dependencies, moved dev/tooling and simulator packages to `backend/requirements-dev.txt`, removed unused packages (`boto3`, `requests-oauthlib`, `python-jose`, `passlib`, `jq`, `typer`, `pandas`, `cryptography`, `python-multipart`, `tzdata`), and upgraded `motor` (`>=3.7.1,<4.0`) + `pymongo` (`>=4.9,<5.0`) for MongoDB 8 / Atlas compatibility.
+  - Added `backend/.python-version` (`3.12`), `backend/.env.example`, root `render.yaml` (`airaura-api` free web service Blueprint), and `GET /api/health` (`{"status":"ok","db":"ok"|"error","model_loaded":bool}` with a 2 s DB ping timeout).
+- **Frontend (`frontend/.npmrc`, `frontend/vercel.json`, `frontend/.env.example`):**
+  - Added Vercel configuration (`legacy-peer-deps=true`, `CI=false npm run build`, `build` output directory, SPA rewrite to `/index.html`, and `REACT_APP_BACKEND_URL` example); verified `CI=true npm run build` passes cleanly with zero ESLint warnings.
+- **Firmware & Docs (`firmware/airaura_node/config.example.h`, `firmware/airaura_node/airaura_node.ino`, `DEPLOYMENT.md`):**
+  - Added commented Render HTTPS `SERVER_URL` example in `config.example.h` and raised timeouts over HTTPS (`setConnectTimeout(15000)`, `setTimeout(30000)`) in `airaura_node.ino` for Render cold starts.
+  - Added step-by-step production deployment and key rotation guide in `DEPLOYMENT.md`.
+
 
 
 

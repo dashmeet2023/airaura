@@ -9,7 +9,8 @@
 // ---------- Backend ----------
 // Local test: your PC's IP on the same WiFi, e.g. "http://10.33.242.229:8000"
 // (run uvicorn with --host 0.0.0.0 and allow port 8000 in Windows Firewall).
-// Online: your Render URL, e.g. "https://airaura-api.onrender.com"
+// Online: your Render URL — uncomment below and comment out the local URL:
+// #define SERVER_URL "https://airaura-api.onrender.com"
 #define SERVER_URL    "http://PC_IP_HERE:8000"
 #define NODE_ID       "airaura-01"
 #define NODE_KEY      "airaura-node-01-secret"   // must match NODE_API_KEY in backend/.env

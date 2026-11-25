@@ -171,8 +171,8 @@ int postJson(const String& body) {
   }
   if (!ok) return -1;
   http.setReuse(false);
-  http.setConnectTimeout(5000);
-  http.setTimeout(10000);
+  http.setConnectTimeout(isHttps ? 15000 : 5000);
+  http.setTimeout(isHttps ? 30000 : 10000);
   http.addHeader("Content-Type", "application/json");
   http.addHeader("X-Node-Key", NODE_KEY);
   int code = http.POST(body);

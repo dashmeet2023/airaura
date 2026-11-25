@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: airaura-api
+    runtime: python
+    rootDir: backend
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn server:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: MONGO_URL
+        sync: false
+      - key: DB_NAME
+        value: airaura
+      - key: ENV
+        value: production
+      - key: JWT_SECRET
+        sync: false
+      - key: NODE_API_KEY
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: ADMIN_EMAIL
+        value: admin@ppcb.gov.in
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: STUDENT_DEMO_EMAIL
+        value: student@thapar.edu
+      - key: STUDENT_DEMO_PASSWORD
+        sync: false

@@ -490,6 +490,21 @@ async def root():
     return {"service": "AirAura API", "status": "ok"}
 
 
+@api.get("/health")
+async def health_check():
+    db_state = "ok"
+    try:
+        await asyncio.wait_for(db.command("ping"), timeout=2.0)
+    except Exception as exc:
+        logger.warning("Health check DB ping failed: %s", exc)
+        db_state = "error"
+    return {
+        "status": "ok",
+        "db": db_state,
+        "model_loaded": bool(model_status().get("loaded")),
+    }
+
+
 app.include_router(api)
 app.include_router(create_ingest_router(db, require_role))
 
