@@ -62,7 +62,7 @@ export default function SearchStations({ onSelect }) {
                   <div className="text-sm">{r.name}</div>
                   <div className="text-[10px] font-mono uppercase text-[#64748B] tracking-widest">{r.city} · {r.type}</div>
                 </div>
-                <div className={`text-[10px] uppercase tracking-wider px-2 py-0.5 border ${cat.border} ${cat.text}`}>{cat.label.split(" ")[0]}</div>
+                <div className={`text-[10px] uppercase tracking-wider px-2 py-0.5 border ${cat.border} ${cat.text}`}>{cat.label}</div>
               </button>
             );
           })}

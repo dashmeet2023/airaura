@@ -7,8 +7,10 @@ build/
 __pycache__/
 *.pyc
 venv/
+backend/venv/
 env/
 
 # Secrets & Databases
 .env
+backend/.env
 *.db

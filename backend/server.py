@@ -111,7 +111,7 @@ class LoginIn(BaseModel):
 class AdvisoryIn(BaseModel):
     title: str
     message: str
-    severity: str = Field(default="moderate")  # good | moderate | poor | severe
+    severity: str = Field(default="moderate")  # good | satisfactory | moderate | poor | very_poor | severe
     station_ids: List[str] = Field(default_factory=list)
 
 
@@ -263,7 +263,14 @@ async def predict_station_aqi(station_id: str):
 @api.get("/overview")
 async def overview(user: dict = Depends(require_role("pcb_official"))):
     readings = []
-    buckets = {"good": 0, "moderate": 0, "poor": 0, "severe": 0}
+    buckets = {
+        "good": 0,
+        "satisfactory": 0,
+        "moderate": 0,
+        "poor": 0,
+        "very_poor": 0,
+        "severe": 0,
+    }
     for s in STATIONS:
         r = current_reading(s)
         buckets[r["category"]["code"]] += 1

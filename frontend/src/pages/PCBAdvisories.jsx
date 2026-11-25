@@ -5,9 +5,11 @@ import { Megaphone } from "@phosphor-icons/react";
 
 const SEVERITIES = [
   { id: "good", label: "Good", color: "#10B981" },
+  { id: "satisfactory", label: "Satisfactory", color: "#84CC16" },
   { id: "moderate", label: "Moderate", color: "#F59E0B" },
   { id: "poor", label: "Poor", color: "#F97316" },
-  { id: "severe", label: "Severe", color: "#EF4444" },
+  { id: "very_poor", label: "Very Poor", color: "#EF4444" },
+  { id: "severe", label: "Severe", color: "#7F1D1D", textColor: "#F87171" },
 ];
 
 export default function PCBAdvisories() {
@@ -91,7 +93,7 @@ export default function PCBAdvisories() {
                     className={`text-[10px] uppercase tracking-[0.18em] px-3 py-1.5 border transition-colors ${
                       form.severity === s.id ? "bg-[#1E293B] text-white" : "text-[#94A3B8] hover:text-white"
                     }`}
-                    style={{ borderColor: form.severity === s.id ? s.color : "#1E293B", color: form.severity === s.id ? s.color : undefined }}
+                    style={{ borderColor: form.severity === s.id ? s.color : "#1E293B", color: form.severity === s.id ? (s.textColor || s.color) : undefined }}
                   >
                     {s.label}
                   </button>
@@ -134,7 +136,7 @@ export default function PCBAdvisories() {
                   <div className="absolute top-0 left-0 bottom-0 w-1" style={{ backgroundColor: sev.color }} />
                   <div className="flex items-baseline justify-between gap-4 mb-2">
                     <h3 className="font-display text-lg font-bold tracking-tight">{a.title}</h3>
-                    <span className="text-[10px] uppercase tracking-[0.2em]" style={{ color: sev.color }}>{sev.label}</span>
+                    <span className="text-[10px] uppercase tracking-[0.2em]" style={{ color: sev.textColor || sev.color }}>{sev.label}</span>
                   </div>
                   <p className="text-sm text-[#94A3B8] leading-relaxed">{a.message}</p>
                   <div className="mt-4 flex items-center justify-between text-[10px] font-mono uppercase tracking-widest text-[#64748B]">

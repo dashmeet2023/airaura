@@ -127,36 +127,63 @@ STATIONS = [
 ]
 
 
-def aqi_from_pm25(pm25: float) -> int:
-    """US-EPA-style AQI calculation from PM2.5."""
-    breakpoints = [
-        (0.0, 12.0, 0, 50),
-        (12.1, 35.4, 51, 100),
-        (35.5, 55.4, 101, 150),
-        (55.5, 150.4, 151, 200),
-        (150.5, 250.4, 201, 300),
-        (250.5, 350.4, 301, 400),
-        (350.5, 500.4, 401, 500),
-    ]
-    pm25 = max(0.0, min(pm25, 500.0))
+_PM25_BREAKPOINTS = [
+    (0.0, 30.0, 0, 50),
+    (30.0, 60.0, 51, 100),
+    (60.0, 90.0, 101, 200),
+    (90.0, 120.0, 201, 300),
+    (120.0, 250.0, 301, 400),
+    (250.0, 380.0, 401, 500),
+]
+
+_PM10_BREAKPOINTS = [
+    (0.0, 50.0, 0, 50),
+    (50.0, 100.0, 51, 100),
+    (100.0, 250.0, 101, 200),
+    (250.0, 350.0, 201, 300),
+    (350.0, 430.0, 301, 400),
+    (430.0, 510.0, 401, 500),
+]
+
+
+def _subindex(concentration: float, breakpoints: list[tuple[float, float, int, int]]) -> int:
+    """Piecewise-linear CPCB sub-index across continuous concentration breakpoints."""
+    c = max(0.0, float(concentration))
     for c_low, c_high, a_low, a_high in breakpoints:
-        if c_low <= pm25 <= c_high:
-            return round(((a_high - a_low) / (c_high - c_low)) * (pm25 - c_low) + a_low)
+        if c <= c_high:
+            val = ((a_high - a_low) / (c_high - c_low)) * (c - c_low) + a_low
+            return min(500, round(val))
     return 500
+
+
+def aqi_from_pm25(pm25: float) -> int:
+    """India CPCB AQI sub-index calculation from PM2.5."""
+    return _subindex(pm25, _PM25_BREAKPOINTS)
+
+
+def aqi_cpcb(pm25: float, pm10: float | None = None) -> tuple[int, str]:
+    """India CPCB AQI = max of PM2.5 and PM10 sub-indices (capped at 500) and dominant pollutant."""
+    sub_pm25 = _subindex(pm25, _PM25_BREAKPOINTS)
+    if pm10 is None:
+        return min(500, sub_pm25), "PM2.5"
+    sub_pm10 = _subindex(pm10, _PM10_BREAKPOINTS)
+    if sub_pm25 >= sub_pm10:
+        return min(500, sub_pm25), "PM2.5"
+    return min(500, sub_pm10), "PM10"
 
 
 def category_for_aqi(aqi: int) -> dict:
     if aqi <= 50:
         return {"label": "Good", "color": "#10B981", "code": "good"}
     if aqi <= 100:
-        return {"label": "Moderate", "color": "#F59E0B", "code": "moderate"}
-    if aqi <= 150:
-        return {"label": "Unhealthy for Sensitive", "color": "#F97316", "code": "poor"}
+        return {"label": "Satisfactory", "color": "#84CC16", "code": "satisfactory"}
     if aqi <= 200:
-        return {"label": "Unhealthy", "color": "#F97316", "code": "poor"}
+        return {"label": "Moderate", "color": "#F59E0B", "code": "moderate"}
     if aqi <= 300:
-        return {"label": "Very Unhealthy", "color": "#EF4444", "code": "severe"}
-    return {"label": "Hazardous", "color": "#7F1D1D", "code": "severe"}
+        return {"label": "Poor", "color": "#F97316", "code": "poor"}
+    if aqi <= 400:
+        return {"label": "Very Poor", "color": "#EF4444", "code": "very_poor"}
+    return {"label": "Severe", "color": "#7F1D1D", "code": "severe"}
 
 
 def _diurnal_factor(hour: int) -> float:
@@ -177,7 +204,7 @@ def synth_reading(station: dict, ts: datetime, seed_offset: int = 0) -> dict:
     o3 = max(8, 30 + (24 - abs(ts.hour - 14)) * rnd.uniform(0.8, 1.8))
     temp = 18 + 9 * math.sin((ts.hour - 9) / 12 * math.pi) + rnd.uniform(-1.5, 1.5)
     humidity = max(20, min(95, 65 - (temp - 22) * 1.6 + rnd.uniform(-6, 6)))
-    aqi = aqi_from_pm25(pm25)
+    aqi, dominant = aqi_cpcb(pm25, pm10)
     return {
         "timestamp": ts.isoformat(),
         "pm25": round(pm25, 1),
@@ -189,6 +216,7 @@ def synth_reading(station: dict, ts: datetime, seed_offset: int = 0) -> dict:
         "temperature": round(temp, 1),
         "humidity": round(humidity, 1),
         "aqi": aqi,
+        "dominant_pollutant": dominant,
         "category": category_for_aqi(aqi),
     }
 
@@ -217,6 +245,8 @@ def forecast_7d(station: dict, now: datetime | None = None) -> list[dict]:
             "date": future.date().isoformat(),
             "aqi": r["aqi"],
             "pm25": r["pm25"],
+            "pm10": r["pm10"],
+            "dominant_pollutant": r["dominant_pollutant"],
             "category": r["category"],
         })
     return out
@@ -246,14 +276,23 @@ HEALTH_TIPS = {
         "Air quality is excellent. Perfect day for outdoor activities and exercise.",
         "Open windows to let fresh air circulate indoors.",
     ],
+    "satisfactory": [
+        "Air quality is acceptable. Sensitive individuals should watch for minor breathing discomfort.",
+        "Outdoor activities are generally safe; ventilate rooms during mid-day.",
+    ],
     "moderate": [
-        "Generally safe outside. Sensitive individuals should limit prolonged exertion.",
-        "Consider a light walk; keep windows open during morning hours only.",
+        "People with asthma, lung or heart conditions, children and elderly should limit prolonged exertion.",
+        "Consider a light walk; keep windows open during cleaner afternoon hours only.",
     ],
     "poor": [
-        "Wear an N95 mask outdoors. Reduce outdoor exercise.",
+        "Wear an N95 mask outdoors. Reduce prolonged outdoor exercise.",
         "Use air purifiers indoors. Avoid burning incense or candles.",
-        "Children and elderly should stay indoors during peak hours.",
+        "Children, elderly and sensitive groups should stay indoors during peak hours.",
+    ],
+    "very_poor": [
+        "Avoid outdoor exercise. Wear an N95 mask if going outside is unavoidable.",
+        "Keep windows closed and run air purifiers indoors continuously.",
+        "Monitor respiratory symptoms closely and limit outdoor exposure.",
     ],
     "severe": [
         "Stay indoors. Air purifier ON. Wear N95 if you must go out.",

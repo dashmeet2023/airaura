@@ -41,8 +41,8 @@ export default function PCBDashboard() {
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-px bg-[#1E293B] border border-[#1E293B] mb-8">
           <KPI label="Regional Avg AQI" value={summary.average_aqi} accent={cat.color} sub={cat.label} testid="kpi-avg" />
           <KPI label="Active Stations" value={summary.total_stations} icon={Buildings} sub="online" testid="kpi-stations" />
-          <KPI label="Severe / Poor Zones" value={summary.buckets.severe + summary.buckets.poor} accent="#EF4444" icon={ShieldWarning} sub="needs action" testid="kpi-bad" />
-          <KPI label="Clean Zones" value={summary.buckets.good + summary.buckets.moderate} accent="#10B981" sub="acceptable" testid="kpi-good" />
+          <KPI label="Poor to Severe Zones" value={(summary.buckets.severe || 0) + (summary.buckets.very_poor || 0) + (summary.buckets.poor || 0)} accent="#EF4444" icon={ShieldWarning} sub="needs action" testid="kpi-bad" />
+          <KPI label="Clean Zones" value={(summary.buckets.good || 0) + (summary.buckets.satisfactory || 0)} accent="#10B981" sub="acceptable" testid="kpi-good" />
         </div>
 
         {/* HOTSPOTS & CLEANEST */}
@@ -56,10 +56,12 @@ export default function PCBDashboard() {
           <span className="text-[10px] uppercase tracking-[0.3em] text-[#94A3B8] mr-2">Filter</span>
           {[
             { id: "all", label: `All (${stations.length})`, color: "#94A3B8" },
-            { id: "good", label: `Good (${summary.buckets.good})`, color: "#10B981" },
-            { id: "moderate", label: `Moderate (${summary.buckets.moderate})`, color: "#F59E0B" },
-            { id: "poor", label: `Poor (${summary.buckets.poor})`, color: "#F97316" },
-            { id: "severe", label: `Severe (${summary.buckets.severe})`, color: "#EF4444" },
+            { id: "good", label: `Good (${summary.buckets.good || 0})`, color: "#10B981" },
+            { id: "satisfactory", label: `Satisfactory (${summary.buckets.satisfactory || 0})`, color: "#84CC16" },
+            { id: "moderate", label: `Moderate (${summary.buckets.moderate || 0})`, color: "#F59E0B" },
+            { id: "poor", label: `Poor (${summary.buckets.poor || 0})`, color: "#F97316" },
+            { id: "very_poor", label: `Very Poor (${summary.buckets.very_poor || 0})`, color: "#EF4444" },
+            { id: "severe", label: `Severe (${summary.buckets.severe || 0})`, color: "#7F1D1D", textColor: "#F87171" },
           ].map((f) => (
             <button
               key={f.id}
@@ -70,7 +72,7 @@ export default function PCBDashboard() {
                   ? "border-[#3B82F6] bg-[#3B82F6]/10 text-white"
                   : "border-[#1E293B] text-[#94A3B8] hover:border-[#334155] hover:text-white"
               }`}
-              style={filter === f.id ? { borderColor: f.color, color: f.color } : {}}
+              style={filter === f.id ? { borderColor: f.color, color: f.textColor || f.color } : {}}
             >
               {f.label}
             </button>
@@ -91,7 +93,7 @@ export default function PCBDashboard() {
                 <div className="absolute top-0 left-0 right-0 h-0.5" style={{ backgroundColor: c.color }} />
                 <div className="flex items-baseline justify-between mb-3">
                   <div className="text-[10px] uppercase tracking-[0.2em] text-[#64748B]">{s.type}</div>
-                  <div className={`text-[9px] uppercase tracking-wider px-1.5 py-0.5 border ${c.border} ${c.text}`}>{c.label.split(" ")[0]}</div>
+                  <div className={`text-[9px] uppercase tracking-wider px-1.5 py-0.5 border ${c.border} ${c.text}`}>{c.label}</div>
                 </div>
                 <div className="font-display font-bold text-2xl group-hover:text-[#93C5FD] transition-colors">{s.name}</div>
                 <div className="text-xs font-mono text-[#94A3B8] mt-1">{s.city}, {s.state}</div>

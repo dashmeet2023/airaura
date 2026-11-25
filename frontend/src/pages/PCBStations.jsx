@@ -71,7 +71,7 @@ export default function PCBStations() {
                 <div className="col-span-1 text-right font-mono text-xs text-[#94A3B8]">{s.current.pm10}</div>
                 <div className="col-span-1 text-right font-mono text-xs text-[#94A3B8]">{s.current.temperature}°</div>
                 <div className="col-span-1 text-right">
-                  <span className={`text-[9px] uppercase tracking-wider px-1.5 py-0.5 border ${c.border} ${c.text}`}>{c.label.split(" ")[0]}</span>
+                  <span className={`text-[9px] uppercase tracking-wider px-1.5 py-0.5 border whitespace-nowrap ${c.border} ${c.text}`}>{c.label}</span>
                 </div>
               </button>
             );

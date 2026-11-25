@@ -58,10 +58,10 @@ export default function Landing() {
       <section className="border-y border-[#1E293B] bg-[#111827]/40">
         <div className="max-w-[1400px] mx-auto px-6 lg:px-10 py-10">
           <div className="flex items-baseline justify-between mb-6">
-            <div className="text-[10px] uppercase tracking-[0.3em] text-[#94A3B8]">AQI Scale Reference (US EPA)</div>
+            <div className="text-[10px] uppercase tracking-[0.3em] text-[#94A3B8]">AQI Scale Reference (CPCB)</div>
             <div className="text-xs font-mono text-[#64748B]">cpcb · ppcb compliant</div>
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-px bg-[#1E293B] border border-[#1E293B]">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-px bg-[#1E293B] border border-[#1E293B]">
             {AQI_SCALE.map((s) => (
               <div key={s.label} className="bg-[#0B1120] p-5">
                 <div className="w-8 h-1 mb-3" style={{ backgroundColor: s.color }} />

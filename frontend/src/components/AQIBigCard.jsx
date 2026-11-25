@@ -18,7 +18,9 @@ export default function AQIBigCard({ station, reading }) {
               <div className="font-display font-bold text-7xl lg:text-8xl tracking-tighter leading-none" style={{ color: cat.color }} data-testid="aqi-value">
                 {reading.aqi}
               </div>
-              <div className="text-xs font-mono uppercase tracking-[0.2em] text-[#64748B] mt-2">US EPA AQI</div>
+              <div className="text-xs font-mono uppercase tracking-[0.2em] text-[#64748B] mt-2">
+                CPCB AQI{reading.dominant_pollutant ? ` · ${reading.dominant_pollutant}` : ""}
+              </div>
             </div>
             <div className="pb-3">
               <div className={`inline-block px-3 py-1 border ${cat.border} ${cat.bg} ${cat.text} text-xs uppercase tracking-[0.2em] font-medium`} data-testid="aqi-category">

@@ -38,7 +38,7 @@ export default function StudentExplore() {
                 <div className="absolute top-0 left-0 right-0 h-0.5" style={{ backgroundColor: c.color }} />
                 <div className="flex items-baseline justify-between mb-3">
                   <div className="text-[10px] uppercase tracking-[0.2em] text-[#64748B]">{s.type} · {s.state}</div>
-                  <div className={`text-[9px] uppercase tracking-wider px-1.5 py-0.5 border ${c.border} ${c.text}`}>{c.label.split(" ")[0]}</div>
+                  <div className={`text-[9px] uppercase tracking-wider px-1.5 py-0.5 border ${c.border} ${c.text}`}>{c.label}</div>
                 </div>
                 <div className="font-display font-bold text-xl group-hover:text-[#93C5FD] transition-colors">{s.name}</div>
                 <div className="text-xs font-mono text-[#94A3B8] mt-1">{s.city}</div>
@@ -56,8 +56,8 @@ export default function StudentExplore() {
 
         {/* AQI scale */}
         <div className="border border-[#1E293B] bg-[#111827] p-6">
-          <div className="text-[10px] uppercase tracking-[0.3em] text-[#94A3B8] mb-5">AQI Reference Scale</div>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-px bg-[#1E293B] border border-[#1E293B]">
+          <div className="text-[10px] uppercase tracking-[0.3em] text-[#94A3B8] mb-5">CPCB AQI Reference Scale</div>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-px bg-[#1E293B] border border-[#1E293B]">
             {AQI_SCALE.map((s) => (
               <div key={s.label} className="bg-[#0B1120] p-4">
                 <div className="w-6 h-1 mb-2" style={{ backgroundColor: s.color }} />

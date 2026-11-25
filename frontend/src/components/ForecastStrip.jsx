@@ -16,7 +16,7 @@ export default function ForecastStrip({ forecast }) {
               <div className="text-[10px] font-mono uppercase text-[#64748B]">{dt.toLocaleDateString([], { weekday: "short" })}</div>
               <div className="text-[10px] font-mono text-[#94A3B8] mb-3">{dt.getDate()}/{dt.getMonth() + 1}</div>
               <div className="font-display font-bold text-2xl" style={{ color: cat.color }}>{d.aqi}</div>
-              <div className="text-[9px] uppercase tracking-wider text-[#64748B] mt-2 truncate" title={cat.label}>{cat.label.split(" ")[0]}</div>
+              <div className="text-[9px] uppercase tracking-wider text-[#64748B] mt-2 truncate" title={cat.label}>{cat.label}</div>
             </div>
           );
         })}
