@@ -4,6 +4,7 @@ from pathlib import Path
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
+import asyncio
 import os
 import logging
 import uuid
@@ -29,6 +30,12 @@ from aqi_data import (
     category_for_aqi,
 )
 from ml.aqi_model import predict_aqi, model_status
+from ingest import (
+    aggregation_loop,
+    create_ingest_router,
+    ensure_ingest_indexes,
+    seed_default_node,
+)
 
 # ---------- DB ----------
 mongo_url = os.environ['MONGO_URL']
@@ -327,6 +334,7 @@ async def root():
 
 
 app.include_router(api)
+app.include_router(create_ingest_router(db, require_role))
 
 app.add_middleware(
     CORSMiddleware,
@@ -344,6 +352,8 @@ logger = logging.getLogger(__name__)
 @app.on_event("startup")
 async def on_startup():
     await db.users.create_index("email", unique=True)
+    await ensure_ingest_indexes(db)
+    await seed_default_node(db)
 
     # Seed demo accounts
     seed_accounts = [
@@ -408,7 +418,13 @@ async def on_startup():
         ]
         await db.advisories.insert_many(samples)
 
+    app.state.aggregation_task = asyncio.create_task(aggregation_loop(db))
+
 
 @app.on_event("shutdown")
 async def on_shutdown():
+    task = getattr(app.state, "aggregation_task", None)
+    if task is not None:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
     client.close()
