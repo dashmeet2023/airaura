@@ -99,7 +99,7 @@ class RegisterIn(BaseModel):
     name: str
     email: EmailStr
     password: str = Field(min_length=6)
-    role: str = Field(default="student")  # student | pcb_official
+    role: Optional[str] = Field(default="student")  # ignored; server always assigns "student"
     home_station_id: Optional[str] = None
 
 
@@ -119,29 +119,28 @@ class AdvisoryIn(BaseModel):
 @api.post("/auth/register")
 async def register(data: RegisterIn):
     email = data.email.lower().strip()
-    if data.role not in ("student", "pcb_official"):
-        raise HTTPException(status_code=400, detail="Invalid role")
     existing = await db.users.find_one({"email": email})
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
+    role = "student"  # PCB accounts are created only via startup seed/admin
     doc = {
         "name": data.name,
         "email": email,
         "password_hash": hash_password(data.password),
-        "role": data.role,
+        "role": role,
         "home_station_id": data.home_station_id or "thapar-campus",
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     res = await db.users.insert_one(doc)
     user_id = str(res.inserted_id)
-    token = create_access_token(user_id, email, data.role)
+    token = create_access_token(user_id, email, role)
     return {
         "token": token,
         "user": {
             "id": user_id,
             "name": data.name,
             "email": email,
-            "role": data.role,
+            "role": role,
             "home_station_id": doc["home_station_id"],
         },
     }
