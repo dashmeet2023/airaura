@@ -111,7 +111,7 @@ async def ensure_ingest_indexes(db: Any) -> None:
 
 
 async def seed_default_node(db: Any) -> None:
-    node_key = os.environ.get("NODE_API_KEY")
+    node_key = (os.environ.get("NODE_API_KEY") or "").strip()
     if not node_key:
         logger.warning("NODE_API_KEY not set; skipping default node airaura-01 seed")
         return
@@ -652,9 +652,10 @@ async def aggregation_loop(db: Any, interval_seconds: int = AGGREGATION_INTERVAL
 def _require_node_key(
     x_node_key: Optional[str] = Header(default=None, alias="X-Node-Key"),
 ) -> str:
-    if not x_node_key:
+    cleaned = (x_node_key or "").strip()
+    if not cleaned:
         raise HTTPException(status_code=401, detail="Missing X-Node-Key header")
-    return x_node_key
+    return cleaned
 
 
 def create_ingest_router(db: Any, require_role: Callable[..., Any]) -> APIRouter:
