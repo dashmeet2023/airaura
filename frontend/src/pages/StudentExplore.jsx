@@ -4,6 +4,7 @@ import Header from "../components/Header";
 import { api } from "../api/client";
 import { categoryForAqi, AQI_SCALE } from "../lib/aqi";
 import SearchStations from "../components/SearchStations";
+import SourceBadge from "../components/SourceBadge";
 
 export default function StudentExplore() {
   const nav = useNavigate();
@@ -36,9 +37,12 @@ export default function StudentExplore() {
                 className="bg-[#0B1120] p-6 text-left hover:bg-[#111827] transition-colors group relative"
               >
                 <div className="absolute top-0 left-0 right-0 h-0.5" style={{ backgroundColor: c.color }} />
-                <div className="flex items-baseline justify-between mb-3">
-                  <div className="text-[10px] uppercase tracking-[0.2em] text-[#64748B]">{s.type} · {s.state}</div>
-                  <div className={`text-[9px] uppercase tracking-wider px-1.5 py-0.5 border ${c.border} ${c.text}`}>{c.label}</div>
+                <div className="flex items-baseline justify-between gap-2 mb-3">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-[10px] uppercase tracking-[0.2em] text-[#64748B] truncate">{s.type} · {s.state}</span>
+                    <SourceBadge current={s.current} />
+                  </div>
+                  <div className={`text-[9px] uppercase tracking-wider px-1.5 py-0.5 border whitespace-nowrap ${c.border} ${c.text}`}>{c.label}</div>
                 </div>
                 <div className="font-display font-bold text-xl group-hover:text-[#93C5FD] transition-colors">{s.name}</div>
                 <div className="text-xs font-mono text-[#94A3B8] mt-1">{s.city}</div>

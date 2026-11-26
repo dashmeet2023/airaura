@@ -1,5 +1,5 @@
 /*
-  AirAura Node firmware v0.2.1
+  AirAura Node firmware v0.3.0
   ESP32 + PMS5003 (UART2) + DHT11/DHT22 + MQ-2/MQ-135 module (digital DO, optional analog AO)
 
   Every 60 s: median of all samples collected in that minute -> JSON POST to
@@ -19,26 +19,21 @@
 #include <DHT.h>
 #include <time.h>
 #include <algorithm>
+#include <WiFiManager.h>   // library "WiFiManager" by tzapu
 
 #if __has_include("config.h")
 #include "config.h"
 #else
-#error "Copy config.example.h to config.h and fill in your WiFi + server details"
+#error "Copy config.example.h to config.h and set SERVER_URL + NODE_KEY"
 #endif
 
-#define FW_VERSION "0.2.1"
+#define FW_VERSION "0.3.0"
 #define MAX_SAMPLES 150
 #define BUFFER_FILE "/buffer.jsonl"
 #define BUFFER_MAX_LINES 500
 
-#ifndef ENABLE_LOCAL_PAGE
-#define ENABLE_LOCAL_PAGE false
-#endif
-
 DHT dht(DHT_PIN, DHT_TYPE);
 WebServer server(80);
-WiFiClient plainClient;
-WiFiClientSecure secureClient;
 
 // ---------- sample buffers for the current minute ----------
 uint16_t pm1S[MAX_SAMPLES], pm25S[MAX_SAMPLES], pm10S[MAX_SAMPLES];
@@ -134,9 +129,38 @@ void ensureWifi() {
   if (WiFi.status() == WL_CONNECTED) return;
   if (millis() - lastWifiTryMs < 15000 && lastWifiTryMs != 0) return;
   lastWifiTryMs = millis();
-  Serial.printf("[wifi] connecting to %s ...\n", WIFI_SSID);
-  WiFi.disconnect();
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
+  Serial.println("[wifi] reconnecting with saved credentials ...");
+  WiFi.reconnect();
+}
+
+// Opens the "AirAura-Setup" hotspot. Connect a phone to it, a page opens,
+// pick your Wi-Fi and enter its password. Saved permanently on the board.
+void runSetupPortal(bool force) {
+  WiFiManager wm;
+  wm.setConfigPortalTimeout(300);          // give up after 5 min, then retry
+  wm.setTitle("AirAura Node Wi-Fi setup");
+  bool ok = force ? wm.startConfigPortal(SETUP_AP_NAME, SETUP_AP_PASS)
+                  : wm.autoConnect(SETUP_AP_NAME, SETUP_AP_PASS);
+  if (!ok) {
+    Serial.println("[wifi] setup portal timed out, restarting");
+    delay(1000);
+    ESP.restart();
+  }
+  WiFi.setSleep(false);
+}
+
+void checkSetupButton() {
+  static unsigned long pressedAt = 0;
+  if (digitalRead(SETUP_BUTTON) == LOW) {
+    if (pressedAt == 0) pressedAt = millis();
+    if (millis() - pressedAt > 5000) {
+      Serial.println("[wifi] BOOT held 5 s -> opening setup portal");
+      pressedAt = 0;
+      runSetupPortal(true);
+    }
+  } else {
+    pressedAt = 0;
+  }
 }
 
 void checkTime() {
@@ -157,28 +181,31 @@ String isoNow() {
 }
 
 // ---------- HTTP ----------
+WiFiClient plainClient;
+WiFiClientSecure secureClient;
+bool secureReady = false;
+
 int postJson(const String& body) {
   if (WiFi.status() != WL_CONNECTED) return -1;
   String url = String(SERVER_URL) + "/api/ingest";
   HTTPClient http;
-  bool isHttps = url.startsWith("https");
+  http.setReuse(false);
+  bool isHttps = String(SERVER_URL).startsWith("https");
+  http.setConnectTimeout(isHttps ? 15000 : 5000);
+  http.setTimeout(isHttps ? 30000 : 10000);   // Render free tier can take 30-60 s to wake
   bool ok;
-  if (isHttps) {
-    secureClient.setInsecure();  // TODO: pin the server's root CA for production
+  if (url.startsWith("https")) {
+    if (!secureReady) { secureClient.setInsecure(); secureReady = true; }  // TODO: pin root CA
     ok = http.begin(secureClient, url);
   } else {
     ok = http.begin(plainClient, url);
   }
   if (!ok) return -1;
-  http.setReuse(false);
-  http.setConnectTimeout(isHttps ? 15000 : 5000);
-  http.setTimeout(isHttps ? 30000 : 10000);
   http.addHeader("Content-Type", "application/json");
   http.addHeader("X-Node-Key", NODE_KEY);
   int code = http.POST(body);
   http.end();
-  if (isHttps) secureClient.stop();
-  else plainClient.stop();
+  plainClient.stop();
   return code;
 }
 
@@ -324,10 +351,11 @@ void setup() {
   if (!LittleFS.begin(true)) Serial.println("[fs] LittleFS mount failed — offline buffer disabled");
 
   bootId = esp_random();
+  pinMode(SETUP_BUTTON, INPUT_PULLUP);
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(true);
-  WiFi.setSleep(false);
-  ensureWifi();
+  Serial.println("[wifi] connecting (if no saved Wi-Fi, join hotspot " SETUP_AP_NAME ")");
+  runSetupPortal(false);
   configTime(0, 0, "pool.ntp.org", "time.google.com");
 
   if (ENABLE_LOCAL_PAGE) {
@@ -342,6 +370,7 @@ void loop() {
   static bool printedIp = false;
   readPMS();
   sampleSlowSensors();
+  checkSetupButton();
   ensureWifi();
   checkTime();
   if (WiFi.status() == WL_CONNECTED && !printedIp) {

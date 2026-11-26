@@ -123,21 +123,22 @@ python -c "import secrets; print(secrets.token_hex(32))"
 ## (g) Update ESP32 Firmware Config and Reflash
 
 1. On your workstation, edit the gitignored `firmware/airaura_node/config.h`:
-   ```cpp
-   #define WIFI_SSID     "YOUR_WIFI_SSID"
-   #define WIFI_PASS     "YOUR_WIFI_PASSWORD"
-   #define SERVER_URL    "https://airaura-api.onrender.com"
-   #define NODE_ID       "airaura-01"
-   #define NODE_KEY      "<PASTE_YOUR_NEW_NODE_API_KEY_HERE>"
-   ```
-2. Open [firmware/airaura_node/airaura_node.ino](firmware/airaura_node/airaura_node.ino) in Arduino IDE (`v0.2.1` or newer raises timeouts over HTTPS to `15000 ms` connect / `30000 ms` HTTP timeout).
-3. Select the ESP32 board and COM port, then click **Upload**.
+   - Wi-Fi credentials are **not** set in code — firmware `v0.3.0` uses the **`AirAura-Setup`** WiFiManager captive portal.
+   - Set:
+     ```cpp
+     #define SERVER_URL    "https://airaura-api.onrender.com"
+     #define NODE_ID       "airaura-01"
+     #define NODE_KEY      "<PASTE_YOUR_RENDER_NODE_API_KEY_HERE>"
+     ```
+   - Make sure `NODE_KEY` matches Render's `NODE_API_KEY` environment variable verbatim.
+2. Open [firmware/airaura_node/airaura_node.ino](firmware/airaura_node/airaura_node.ino) (`v0.3.0`) in Arduino IDE, select the ESP32 board and COM port, and click **Upload**.
+3. Power the node, connect from a phone to the **`AirAura-Setup`** hotspot (password `airaura123`), and save your Wi-Fi network in the captive portal. *(Hold the ESP32 `BOOT` button for 5 seconds at any time to clear saved Wi-Fi and reopen `AirAura-Setup`.)*
 4. Open Serial Monitor (`115200` baud) and confirm HTTP `200` responses from `/api/ingest`.
 5. Check live node status:
    ```bash
    curl https://airaura-api.onrender.com/api/nodes/airaura-01/status
    ```
-   Confirm `"online": true` and `"latest.fw": "0.2.1"`.
+   Confirm `"online": true` and `"latest.fw": "0.3.0"`.
 
 ---
 

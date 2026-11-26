@@ -23,7 +23,7 @@ export default function Header() {
           </div>
           <div className="font-display font-bold tracking-tight text-[15px]">
             AirAura
-            <span className="ml-2 text-[10px] tracking-[0.25em] uppercase text-[#64748B]">v0.1</span>
+            <span className="ml-2 text-[10px] tracking-[0.25em] uppercase text-[#64748B]">v1.0</span>
           </div>
         </Link>
 

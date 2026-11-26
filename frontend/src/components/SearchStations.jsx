@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { MagnifyingGlass } from "@phosphor-icons/react";
 import { api } from "../api/client";
 import { categoryForAqi } from "../lib/aqi";
+import SourceBadge from "./SourceBadge";
 
 export default function SearchStations({ onSelect }) {
   const [q, setQ] = useState("");
@@ -58,8 +59,11 @@ export default function SearchStations({ onSelect }) {
                 className="w-full text-left px-4 py-3 border-b border-[#1E293B] hover:bg-[#1E293B] transition-colors flex items-center gap-4"
               >
                 <div className="font-display font-bold text-lg w-12 text-right" style={{ color: cat.color }}>{r.current.aqi}</div>
-                <div className="flex-1">
-                  <div className="text-sm">{r.name}</div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm truncate">{r.name}</span>
+                    <SourceBadge current={r.current} />
+                  </div>
                   <div className="text-[10px] font-mono uppercase text-[#64748B] tracking-widest">{r.city} · {r.type}</div>
                 </div>
                 <div className={`text-[10px] uppercase tracking-wider px-2 py-0.5 border ${cat.border} ${cat.text}`}>{cat.label}</div>

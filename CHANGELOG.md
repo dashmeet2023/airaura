@@ -105,6 +105,16 @@
   - Exported the XGBoost model to portable JSON (`backend/ml/model/aqi_track_a_xgb.json`) and updated `backend/ml/aqi_model.py` to load the `.json` model via `xgboost.Booster().load_model()` with `.pkl` fallback only when `.json` is missing (avoiding `scikit-learn` runtime dependency; verified 5 sample feature rows match within `< 0.01` with max diff `0.00000000`).
   - Pinned `PYTHON_VERSION=3.12.10` in `render.yaml` to match `backend/venv`.
 
+### v1.0 — Production Handover
+- **Cloud Deployment Live:**
+  - Deployed MongoDB Atlas `M0` (`AWS ap-south-1`), FastAPI backend on Render (`https://airaura-api.onrender.com`, whitespace-stripped `NODE_API_KEY` / `X-Node-Key` verification in `backend/ingest.py`), and React SPA on Vercel (`https://airaura.vercel.app`) with production `CORS_ORIGINS` and verified PPCB/Student logins.
+- **Firmware `v0.3.0`:**
+  - Upgraded ESP32 node firmware to `v0.3.0` targeting Render HTTPS with `WiFiManager` (`AirAura-Setup` captive portal) and 5-second `BOOT`-hold Wi-Fi reconfiguration, plus updated `firmware/airaura_node/README.md` and `config.example.h`.
+- **Frontend & Documentation (`frontend/`, `README.md`, `DEPLOYMENT.md`):**
+  - Extracted shared `SourceBadge` component (`Live sensor` / `Warming up` / `Offline` / `Simulated`) and added source badges to `StudentExplore.jsx` station cards and `SearchStations.jsx` results alongside `PCBDashboard.jsx`.
+  - Updated `Header.jsx` version label from `v0.1` to `v1.0`.
+  - Rewrote root `README.md` for client handover and updated `DEPLOYMENT.md` firmware instructions for the `AirAura-Setup` captive portal workflow.
+
 
 
 
